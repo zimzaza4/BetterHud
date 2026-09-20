@@ -3,6 +3,7 @@ package kr.toxicity.hud.util
 import kr.toxicity.hud.api.manager.ConfigManager
 import kr.toxicity.hud.api.yaml.YamlObject
 import kr.toxicity.hud.pack.PackMeta
+import kr.toxicity.hud.yaml.forEachExpanded
 import java.io.File
 
 fun File.subFolder(dir: String) = File(this, dir).apply {
@@ -30,15 +31,11 @@ fun File.forEachAllFolder(block: (File) -> Unit) {
     } else block(this)
 }
 
-fun YamlObject.forEachSubConfiguration(block: (String, YamlObject) -> Unit) {
-    forEach {
-        val v = it.value
-        if (v is YamlObject) block(it.key, v)
+fun YamlObject.forEachSubConfiguration(block: (String, YamlObject) -> Unit) = forEachExpanded(block)
+fun <T> YamlObject.mapSubConfiguration(block: (String, YamlObject) -> T) = buildList {
+    forEachExpanded { name, yamlObject ->
+        add(block(name, yamlObject))
     }
-}
-fun <T> YamlObject.mapSubConfiguration(block: (String, YamlObject) -> T) = mapNotNull {
-    val v = it.value
-    if (v is YamlObject) block(it.key, v) else null
 }
 
 fun File.toMcmeta() = PackMeta.from(this)

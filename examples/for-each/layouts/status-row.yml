@@ -1,0 +1,126 @@
+ce_ct_row:
+  layer: 5
+  conditions:
+    1:
+      first: ce_in_match
+      second: 'true'
+      operation: '=='
+  images:
+    panel:
+      name: ce_game_status_panel
+      x: -34
+      y: 0
+    "avatar_{slot}":
+      for-each:
+        - { slot: 1, x: 77 }
+        - { slot: 2, x: 53 }
+        - { slot: 3, x: 29 }
+        - { slot: 4, x: 5 }
+        - { slot: 5, x: -19 }
+      name: "ce_ct_avatar_{slot}"
+      x: "{x}"
+      y: 2
+      conditions:
+        1:
+          first: "ce_team_ct_exist:{slot}"
+          second: 'true'
+          operation: '=='
+    "icon_{slot}":
+      for-each:
+        - { slot: 1, x: 78 }
+        - { slot: 2, x: 54 }
+        - { slot: 3, x: 30 }
+        - { slot: 4, x: 6 }
+        - { slot: 5, x: -18 }
+      name: ce_ct_icon
+      x: "{x}"
+      y: 3
+      conditions:
+        1:
+          first: "ce_team_ct_dead:{slot}"
+          second: 'false'
+          operation: '=='
+        2:
+          first: "ce_team_ct_exist:{slot}"
+          second: 'true'
+          operation: '=='
+    "bar_panel_{slot}":
+      for-each:
+        - { slot: 1, x: 77 }
+        - { slot: 2, x: 53 }
+        - { slot: 3, x: 29 }
+        - { slot: 4, x: 5 }
+        - { slot: 5, x: -19 }
+      name: ce_member_bar_panel
+      x: "{x}"
+      y: 24
+      conditions:
+        1:
+          first: "ce_team_ct_exist:{slot}"
+          second: 'true'
+          operation: '=='
+        2:
+          first: ce_can_see_ct_health
+          second: 'true'
+          operation: '=='
+    "bar_{slot}":
+      for-each:
+        - { slot: 1, x: 77 }
+        - { slot: 2, x: 53 }
+        - { slot: 3, x: 29 }
+        - { slot: 4, x: 5 }
+        - { slot: 5, x: -19 }
+      name: "ce_health_ct_bar_{slot}"
+      x: "{x}"
+      y: 24
+      conditions:
+        1:
+          first: "ce_team_ct_exist:{slot}"
+          second: 'true'
+          operation: '=='
+        2:
+          first: ce_can_see_ct_health
+          second: 'true'
+          operation: '=='
+    "dead_{slot}":
+      for-each:
+        - { slot: 1, x: 78 }
+        - { slot: 2, x: 54 }
+        - { slot: 3, x: 30 }
+        - { slot: 4, x: 6 }
+        - { slot: 5, x: -18 }
+      name: ce_dead_icon
+      x: "{x}"
+      y: 3
+      conditions:
+        1:
+          first: "ce_team_ct_dead:{slot}"
+          second: 'true'
+          operation: '=='
+        2:
+          first: "ce_team_ct_exist:{slot}"
+          second: 'true'
+          operation: '=='
+  texts:
+    "kills_{slot}":
+      for-each:
+        - { slot: 1, x: 88 }
+        - { slot: 2, x: 64 }
+        - { slot: 3, x: 40 }
+        - { slot: 4, x: 16 }
+        - { slot: 5, x: -8 }
+      name: eng_font
+      pattern: "☠[ce_ct_kills:{slot}]"
+      scale: 0.4
+      x: "{x}"
+      y: 28
+      align: center
+      conditions:
+        1:
+          first: "ce_team_ct_exist:{slot}"
+          second: 'true'
+          operation: '=='
+        2:
+          first: "ce_ct_kills:{slot}"
+          second: '0'
+          operation: '>'

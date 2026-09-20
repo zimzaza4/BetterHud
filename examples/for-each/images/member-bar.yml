@@ -1,0 +1,17 @@
+ce_member_bar_panel:
+  type: single
+  file: "counter_ember/panel/member_health.png"
+
+"ce_health_{team}_bar_{slot}":
+  for-each:
+    team: [ct, t]
+    slot: 1..5
+  type: listener
+  file: "counter_ember/bar/member_health.png"
+  split: 18
+  split-type: left
+  setting:
+    listener:
+      class: placeholder
+      value: "ce_team_{team}_health:{slot}"
+      max: 100

@@ -12,6 +12,7 @@ import kr.toxicity.hud.placeholder.PlaceholderSource
 import kr.toxicity.hud.yaml.YamlArrayImpl
 import kr.toxicity.hud.yaml.YamlElementImpl
 import kr.toxicity.hud.yaml.YamlObjectImpl
+import kr.toxicity.hud.yaml.forEachExpanded
 import org.yaml.snakeyaml.Yaml
 import java.io.File
 import java.io.InputStream
@@ -63,18 +64,17 @@ fun YamlObject.getAsAnimationType(key: String, sender: BetterCommandSource = BOO
 
 
 fun File.forEachAllYaml(sender: BetterCommandSource, block: (File, String, YamlObject) -> Unit) {
-    forEachAllFolder {
-        if (it.extension == "yml") {
+    forEachAllFolder { file ->
+        if (file.extension == "yml") {
             runCatching {
-                it.toYaml().forEach { e ->
-                    val v = e.value
-                    if (v is YamlObject) block(it, e.key, v)
+                file.toYaml().forEachExpanded { name, yamlObject ->
+                    block(file, name, yamlObject)
                 }
             }.handleFailure(sender) {
-                "Unable to load this yml file: ${it.name}"
+                "Unable to load this yml file: ${file.name}"
             }
         } else {
-            sender.warn("This is not a yml file: ${it.path}")
+            sender.warn("This is not a yml file: ${file.path}")
         }
     }
 }
