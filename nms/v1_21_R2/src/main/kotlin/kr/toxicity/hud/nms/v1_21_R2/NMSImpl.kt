@@ -247,6 +247,7 @@ class NMSImpl : NMS {
 
         private var last: HudBossBar = HudBossBar(uuid, Component.empty(), color)
         private var onUse = uuid to HudByteBuf(Unpooled.buffer())
+        private var lastComponent: Component? = null
 
         init {
             val pipeLine = getConnection(listener).channel.pipeline()
@@ -258,7 +259,10 @@ class NMSImpl : NMS {
         fun update(color: BossBar.Color, component: Component) {
             val bossBar = HudBossBar(uuid, component, color)
             last = bossBar
-            listener.send(ClientboundBossEventPacket.createUpdateNamePacket(bossBar))
+            if (component != lastComponent) {
+                lastComponent = component
+                listener.send(ClientboundBossEventPacket.createUpdateNamePacket(bossBar))
+            }
         }
 
         private fun writeBossBar(buf: HudByteBuf, ctx: ChannelHandlerContext?, msg: Any?, promise: ChannelPromise?) {

@@ -73,6 +73,7 @@ class VelocityVolatileCodeHandler : VolatileCodeHandler {
 
         private var last: HudBossBar = uuidHud
         private var onUse = uuidHud
+        private var lastComponent: Component? = null
 
         init {
             val pipeLine = listener.channel.pipeline()
@@ -84,7 +85,10 @@ class VelocityVolatileCodeHandler : VolatileCodeHandler {
         fun update(color: BossBar.Color, component: Component) {
             val bossBar = HudBossBar(uuid, color, listener.protocolVersion)
             last = bossBar
-            listener.write(bossBar.createUpdateNamePacket(component))
+            if (component != lastComponent) {
+                lastComponent = component
+                listener.write(bossBar.createUpdateNamePacket(component))
+            }
         }
 
         private fun writeBossBar(ctx: ChannelHandlerContext?, buf: BossBarPacket, promise: ChannelPromise?) {
