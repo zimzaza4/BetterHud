@@ -1,0 +1,31 @@
+ce_member_widget:
+  template: true
+  conditions:
+    1: { first: "ce_team_{team}_exist:{slot}", second: 'true', operation: '==' }
+  images:
+    avatar:
+      name: "ce_{team}_avatar_{slot}"
+      x: 0
+      y: 0
+    icon:
+      name: "ce_{team}_icon"
+      x: 1
+      y: 1
+    health_panel:
+      name: ce_health_bar_panel
+      x: 0
+      y: 22
+    health:
+      name: "ce_health_{team}_bar_{slot}"
+      x: 0
+      y: 22
+  texts:
+    kills:
+      name: eng_font
+      pattern: "\u2620[ce_{team}_kills:{slot}]"
+      scale: 0.4
+      x: 11
+      y: 26
+      align: center
+      conditions:
+        1: { first: "ce_{team}_kills:{slot}", second: '0', operation: '>' }

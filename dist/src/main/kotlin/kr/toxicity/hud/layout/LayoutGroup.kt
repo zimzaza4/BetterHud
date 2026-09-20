@@ -12,20 +12,20 @@ import kr.toxicity.hud.util.*
 
 class LayoutGroup(
     override val id: String,
-    sender: BetterCommandSource,
-    section: YamlObject
-) : HudConfiguration, ConditionSource by ConditionSource.Impl(section) {
+    val sender: BetterCommandSource,
+    val raw: YamlObject
+) : HudConfiguration, ConditionSource by ConditionSource.Impl(raw) {
 
-    private val loc = PixelLocation(section)
+    private val loc = PixelLocation(raw)
 
-    val align = section["align"]?.asString()?.let {
+    val align = raw["align"]?.asString()?.let {
         runCatching {
             LayoutAlign.valueOf(it.uppercase())
         }.onFailure {
             it.handle(sender, "Unable to find that align: $it")
         }.getOrNull()
     } ?: LayoutAlign.LEFT
-    val offset = section["offset"]?.asString()?.let {
+    val offset = raw["offset"]?.asString()?.let {
         runCatching {
             LayoutOffset.valueOf(it.uppercase())
         }.onFailure {
@@ -33,17 +33,20 @@ class LayoutGroup(
         }.getOrNull()
     } ?: LayoutOffset.CENTER
 
-    val image = section["images"]?.asObject()?.mapSubConfiguration { s, yamlObject ->
+    val image = raw["images"]?.asObject()?.mapSubConfiguration { s, yamlObject ->
         ImageLayout.Impl(s, this, yamlObject, loc)
     } ?: emptyList()
-    val text = section["texts"]?.asObject()?.mapSubConfiguration { s, yamlObject ->
+    val text = raw["texts"]?.asObject()?.mapSubConfiguration { s, yamlObject ->
         TextLayout.Impl(s, this, yamlObject, loc)
     } ?: emptyList()
-    val head = section["heads"]?.asObject()?.mapSubConfiguration { s, yamlObject ->
+    val head = raw["heads"]?.asObject()?.mapSubConfiguration { s, yamlObject ->
         HeadLayout.Impl(s, this, yamlObject, loc)
     } ?: emptyList()
+    val repeat = raw["repeats"]?.asObject()?.mapSubConfiguration { s, yamlObject ->
+        RepeatLayout(s, sender, yamlObject)
+    } ?: emptyList()
 
-    val animation = section["animations"]?.asObject()?.let { animations ->
+    val animation = raw["animations"]?.asObject()?.let { animations ->
         AnimationLocation(animations)
     } ?: AnimationLocation.zero
 }

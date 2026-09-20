@@ -1,0 +1,20 @@
+ce_team_layout:
+  layer: 5
+  images:
+    panel: { name: ce_game_status_panel, x: -34, y: 0 }
+  texts:
+    ct_wins: { name: eng_font, pattern: "[ce_ct_wins]", scale: 0.7, x: 114, y: 17, align: center }
+    t_wins: { name: eng_font, pattern: "[ce_t_wins]", scale: 0.7, x: 139, y: 17, align: center }
+  repeats:
+    "row_{team}":
+      for-each:
+        - { team: ct, x: 77, dx: -24 }
+        - { team: t, x: 155, dx: 24 }
+      template: ce_member_widget
+      variables:
+        team: "{team}"
+      source: "ce_team_members:{team}"
+      max: 12
+      as: slot
+      pixel: { x: "{x}", y: 2 }
+      offset: { dx: "{dx}", dy: 0 }

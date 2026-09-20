@@ -1,6 +1,7 @@
 package kr.toxicity.hud.manager
 
 import kr.toxicity.hud.api.plugin.ReloadInfo
+import kr.toxicity.hud.api.yaml.YamlObject
 import kr.toxicity.hud.layout.LayoutGroup
 import kr.toxicity.hud.resource.GlobalResource
 import kr.toxicity.hud.util.*
@@ -12,6 +13,7 @@ object LayoutManager : BetterHudManager {
     override val supportExternalPacks: Boolean = true
 
     private val layoutMap = HashMap<String, LayoutGroup>()
+    private val templateMap = HashMap<String, YamlObject>()
 
     override fun start() {
 
@@ -21,13 +23,22 @@ object LayoutManager : BetterHudManager {
         layoutMap[name]
     }
 
+    fun getTemplate(name: String) = synchronized(templateMap) {
+        templateMap[name]
+    }
+
     override fun preReload() {
         layoutMap.clear()
+        templateMap.clear()
     }
 
     override fun reload(workingDirectory: File, info: ReloadInfo, resource: GlobalResource) {
         workingDirectory.subFolder("layouts").forEachAllYaml(info.sender) { file, s, yamlObject ->
-            runCatching {
+            if (yamlObject.getAsBoolean("template", false)) {
+                synchronized(templateMap) {
+                    templateMap[s] = yamlObject
+                }
+            } else runCatching {
                 layoutMap.putSync("layout") {
                     LayoutGroup(s, info.sender, yamlObject)
                 }

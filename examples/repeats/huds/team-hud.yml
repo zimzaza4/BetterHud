@@ -1,0 +1,5 @@
+ce_team_hud:
+  layouts:
+    status:
+      name: ce_team_layout
+      gui: { x: 50, y: 0 }
