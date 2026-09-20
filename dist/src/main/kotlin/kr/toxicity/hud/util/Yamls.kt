@@ -79,9 +79,9 @@ fun File.forEachAllYaml(sender: BetterCommandSource, block: (File, String, YamlO
     }
 }
 
-fun YamlObject.toConditions(source: PlaceholderSource) = get("conditions")?.asObject()?.let {
+fun YamlObject.toConditions(source: PlaceholderSource) = Conditions.parseIf(get("if"), source) and (get("conditions")?.asObject()?.let {
     Conditions.parse(it, source)
-} ?: ConditionBuilder.alwaysTrue
+} ?: ConditionBuilder.alwaysTrue)
 fun YamlObject.toColorOverrides(source: PlaceholderSource) = get("color-overrides")?.asObject()?.let {
     ColorOverride.builder(it, source)
 } ?: ColorOverride.empty

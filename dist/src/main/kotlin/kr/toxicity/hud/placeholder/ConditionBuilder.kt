@@ -27,4 +27,10 @@ fun interface ConditionBuilder {
             build1(p) || build2(p)
         }
     }
+    fun not() = ConditionBuilder result@ { updateEvent ->
+        val build = this@ConditionBuilder build updateEvent
+        { p ->
+            !build(p)
+        }
+    }
 }
