@@ -47,12 +47,10 @@ class HudImpl(
             LayoutManager.getLayout(it).ifNull { "this layout doesn't exist: $it" }
         }
         var gui = GuiLocation(yamlObject)
-        yamlObject["gui"]?.asObject()?.let {
-            gui += GuiLocation(it)
+        yamlObject["gui"]?.let {
+            gui += it.toGuiLocation()
         }
-        val pixel = yamlObject["pixel"]?.asObject()?.let {
-            PixelLocation(it)
-        }  ?: PixelLocation.zero
+        val pixel = yamlObject["pixel"]?.toPixelLocation() ?: PixelLocation.zero
         HudAnimation(
             layout.animation.type,
             layout.animation.location.map {

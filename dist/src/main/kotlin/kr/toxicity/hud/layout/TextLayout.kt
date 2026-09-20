@@ -150,9 +150,7 @@ interface TextLayout : HudLayout<TextElement> {
             yamlObject.getAsDouble("background-scale", scale)
         )
         override val emoji: EmojiInfo = EmojiInfo(
-            yamlObject["emoji-pixel"]?.asObject()?.let {
-                PixelLocation(it)
-            } ?: PixelLocation.zero,
+            yamlObject["emoji-pixel"]?.toPixelLocation() ?: PixelLocation.zero,
             yamlObject.getAsDouble("emoji-scale", 1.0).apply {
                 if (this <= 0) throw RuntimeException("emoji-scale cannot be <= 0")
             }

@@ -60,9 +60,9 @@ class CircleCompass(
     } ?: defaultColorEquation
     private val space = section.getAsInt("space", 2).coerceAtLeast(0)
 
-    private val pixel = PixelLocation(section["pixel"]?.asObject().ifNull { "pixel value not set." }) + PixelLocation.hotBarHeight
+    private val pixel = section["pixel"].ifNull { "pixel value not set." }.toPixelLocation() + PixelLocation.hotBarHeight
     private val shader = HudShader(
-        GuiLocation(section["gui"]?.asObject().ifNull { "gui value not set." }),
+        section["gui"].ifNull { "gui value not set." }.toGuiLocation(),
         RenderScale.fromConfig(pixel, section),
         section.getAsInt("layer", 0),
         section.getShadow("outline"),

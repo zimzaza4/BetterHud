@@ -60,7 +60,7 @@ class RepeatLayout(
     } ?: emptyMap()
 
     private val template: String? = section["template"]?.asString()
-    private val pixel = section["pixel"]?.asObject()
+    private val pixel = section["pixel"]?.toSection()
     private val equation: EquationTriple? = pixel?.takeIf {
         it["x-equation"] != null || it["y-equation"] != null
     }?.let {
@@ -70,7 +70,7 @@ class RepeatLayout(
             it["opacity-equation"]?.asString()?.toEquation() ?: TEquation.one
         )
     }
-    val gui: GuiLocation = section["gui"]?.asObject()?.let { GuiLocation(it) } ?: GuiLocation(0.0, 0.0)
+    val gui: GuiLocation = section["gui"]?.toGuiLocation() ?: GuiLocation(0.0, 0.0)
     private val flow: Flow? = section["flow"]?.asObject()?.let { Flow(it) }
     private val offset: Offset? = section["offset"]?.asObject()?.let { Offset(it) }
     private val grid: Grid? = section["grid"]?.asObject()?.let { Grid(it) }
