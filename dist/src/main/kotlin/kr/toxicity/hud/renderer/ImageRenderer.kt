@@ -7,6 +7,7 @@ import kr.toxicity.hud.image.ImageComponent
 import kr.toxicity.hud.layout.ImageLayout
 import kr.toxicity.hud.manager.PlaceholderManagerImpl
 import kr.toxicity.hud.manager.PlayerManagerImpl
+import kr.toxicity.hud.shader.Rotation
 import kr.toxicity.hud.util.*
 import kotlin.math.ceil
 import kotlin.math.roundToInt
@@ -30,6 +31,7 @@ class ImageRenderer(
 
         val mapper = component mapper event
         val colorApply = colorOverrides(event)
+        val rotationGetter = (rotation as? Rotation.Dynamic)?.degree?.build(event)
 
         return tickProvide(tick) build@ { player, frame ->
             val selected = mapper(player)
@@ -58,7 +60,12 @@ class ImageRenderer(
                         empty = empty.append(space, selected.images[frame])
                     }
                     empty.applyColor(colorApply(target))
-                } else component.type.getComponent(listen, frame, selected, target).applyColor(colorApply(target))
+                } else {
+                    val rendered = component.type.getComponent(listen, frame, selected, target)
+                    if (rotationGetter != null) {
+                        rendered.applyRotationPayload((rotationGetter.value(target) as? Number)?.toDouble() ?: 0.0)
+                    } else rendered.applyColor(colorApply(target))
+                }
             } else {
                 if (clearListener) listen.clear(player)
                 EMPTY_PIXEL_COMPONENT

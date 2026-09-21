@@ -5,10 +5,12 @@ import kr.toxicity.hud.animation.AnimationType
 import kr.toxicity.hud.api.yaml.YamlElement
 import kr.toxicity.hud.api.yaml.YamlObject
 import kr.toxicity.hud.equation.TEquation
+import kr.toxicity.hud.manager.PlaceholderManagerImpl
 import kr.toxicity.hud.placeholder.ColorOverride
 import kr.toxicity.hud.placeholder.ConditionBuilder
 import kr.toxicity.hud.placeholder.Conditions
 import kr.toxicity.hud.placeholder.PlaceholderSource
+import kr.toxicity.hud.shader.Rotation
 import kr.toxicity.hud.yaml.YamlArrayImpl
 import kr.toxicity.hud.yaml.YamlElementImpl
 import kr.toxicity.hud.yaml.YamlObjectImpl
@@ -85,6 +87,22 @@ fun YamlObject.toConditions(source: PlaceholderSource) = Conditions.parseIf(get(
 fun YamlObject.toColorOverrides(source: PlaceholderSource) = get("color-overrides")?.asObject()?.let {
     ColorOverride.builder(it, source)
 } ?: ColorOverride.empty
+
+/**
+ * Reads `rotation:`.
+ *
+ * A plain number is a baked (static) angle; anything else is treated as a numeric placeholder
+ * which is evaluated for every player on every update.
+ */
+fun YamlObject.toRotation(source: PlaceholderSource): Rotation {
+    val raw = get("rotation")?.asString() ?: return Rotation.None
+    raw.toDoubleOrNull()?.let {
+        return Rotation.Static(it)
+    }
+    return Rotation.Dynamic(
+        PlaceholderManagerImpl.find(raw, source).assertNumber("this rotation is not a number: $raw")
+    )
+}
 
 fun YamlObject.getTEquation(key: String) = get(key)?.asString()?.let {
     TEquation(it)

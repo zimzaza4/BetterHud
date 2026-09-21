@@ -47,6 +47,26 @@ object PlaceholderManagerImpl : PlaceholderManager, BetterHudManager {
                     it.tick
                 }
             },
+            "player_yaw" to HudPlaceholder.of { _, _ ->
+                Function {
+                    it.location().yaw.toDouble()
+                }
+            },
+            "player_pitch" to HudPlaceholder.of { _, _ ->
+                Function {
+                    it.location().pitch.toDouble()
+                }
+            },
+            "player_x" to HudPlaceholder.of { _, _ ->
+                Function {
+                    it.location().x.toDouble()
+                }
+            },
+            "player_z" to HudPlaceholder.of { _, _ ->
+                Function {
+                    it.location().z.toDouble()
+                }
+            },
             "number" to HudPlaceholder.builder<Number>()
                 .requiredArgsLength(1)
                 .function { args, _ ->

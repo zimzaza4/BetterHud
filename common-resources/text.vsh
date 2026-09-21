@@ -75,6 +75,10 @@ void main() {
     vec2 uiScreen = ui / ScreenSize;
     vec3 color = Color.xyz;
     vertexColor = Color;
+    bool bhRotOn = false;
+    bool bhRotDyn = false;
+    float bhRot = 0.0;
+    vec2 bhRotHalf = vec2(0.0);
     if (pos.y >= ui.y && ProjMat[3].x == -1) {
         int bit = int(pos.y) >> HEIGHT_BIT;
 
@@ -142,6 +146,20 @@ void main() {
 //HideExp        if (ProjMat[3].x == -1 && range(pos.y, ui.y - 60, ui.y - 20) && range(pos.x, ui.x / 2 - 60, ui.x / 2 + 60) && (range(color, exp / 256, exp / 254) || color == vec3(0))) {
 //HideExp            vertexColor = vec4(0);
 //HideExp        }
+    }
+    if (bhRotOn) {
+        if (bhRotDyn) {
+            int bhBits = int(vertexColor.x * 255.0 + 0.5) * 256 + int(vertexColor.y * 255.0 + 0.5);
+            bhRot = float(bhBits) / 65535.0 * 6.283185307;
+            vertexColor = vec4(1.0, 1.0, 1.0, vertexColor.w);
+        }
+        float bhCi = float(gl_VertexID % 4);
+        vec2 bhCs = vec2((bhCi == 2.0 || bhCi == 3.0) ? 1.0 : -1.0, (bhCi == 1.0 || bhCi == 2.0) ? 1.0 : -1.0);
+        vec2 bhPivot = pos.xy - bhCs * bhRotHalf;
+        float bhCa = cos(bhRot);
+        float bhSa = sin(bhRot);
+        vec2 bhD = pos.xy - bhPivot;
+        pos.xy = bhPivot + vec2(bhCa * bhD.x - bhSa * bhD.y, bhSa * bhD.x + bhCa * bhD.y);
     }
 #if !defined(IS_GUI) && !defined(IS_SEE_THROUGH)
     vertexColor *= sample_lightmap(Sampler2, UV2);

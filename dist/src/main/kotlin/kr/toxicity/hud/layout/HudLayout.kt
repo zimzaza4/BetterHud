@@ -6,8 +6,10 @@ import kr.toxicity.hud.location.PixelLocation
 import kr.toxicity.hud.placeholder.ConditionSource
 import kr.toxicity.hud.placeholder.PlaceholderSource
 import kr.toxicity.hud.shader.RenderScale
+import kr.toxicity.hud.shader.Rotation
 import kr.toxicity.hud.shader.ShaderProperty
 import kr.toxicity.hud.util.getShadow
+import kr.toxicity.hud.util.toRotation
 
 interface HudLayout<T : HudElement> : ConditionSource, PlaceholderSource {
     val source: T
@@ -19,6 +21,7 @@ interface HudLayout<T : HudElement> : ConditionSource, PlaceholderSource {
     val cancelIfFollowerNotExists: Boolean
     val renderScale: RenderScale
     val tick: Long
+    val rotation: Rotation
 
     interface Identifier {
         val name: String
@@ -38,5 +41,6 @@ interface HudLayout<T : HudElement> : ConditionSource, PlaceholderSource {
         override val cancelIfFollowerNotExists: Boolean = yaml.getAsBoolean("cancel-if-follower-not-exists", true)
         override val renderScale = RenderScale.fromConfig(location, yaml)
         override val tick: Long = yaml.getAsLong("tick", 1)
+        override val rotation: Rotation = yaml.toRotation(this)
     }
 }

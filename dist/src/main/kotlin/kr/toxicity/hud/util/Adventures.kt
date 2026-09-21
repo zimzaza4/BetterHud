@@ -215,6 +215,19 @@ fun Component.split(option: SplitOption, charWidth: (Pair<Style, Int>) -> Int?):
 infix fun PixelComponent.applyColor(color: TextColor?): PixelComponent = if (color == null) this else apply {
     component applyColor color
 }
+
+/**
+ * Replaces this component's colour with a rotation payload.
+ *
+ * The angle is packed into the red/green channels (16 bit, about 0.0055 degree per step) so that
+ * the vertex shader can read it back from the glyph's vertex colour.
+ * @param degree angle in degrees
+ */
+fun PixelComponent.applyRotationPayload(degree: Double): PixelComponent = apply {
+    val normalized = ((degree % 360.0) + 360.0) % 360.0
+    val bits = (normalized / 360.0 * 65535.0).roundToInt().coerceIn(0, 65535)
+    component.component.color(TextColor.color(bits shr 8 and 0xFF, bits and 0xFF, 0))
+}
 infix fun PixelComponent.shadow(shadow: Int): PixelComponent = apply {
     component shadow shadow
 }

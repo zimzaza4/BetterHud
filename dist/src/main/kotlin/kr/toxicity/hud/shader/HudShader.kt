@@ -9,6 +9,10 @@ data class HudShader(
     val outline: Int,
     val opacity: Double,
     val property: Int,
+    val rotationMode: Int = 0,
+    val rotationDegree: Double = 0.0,
+    val rotationHalfX: Double = 0.0,
+    val rotationHalfY: Double = 0.0,
 ) : Comparable<HudShader> {
     companion object {
         private val comparator = Comparator.comparing { s: HudShader ->
@@ -23,6 +27,14 @@ data class HudShader(
             s.opacity
         }.thenComparing { s: HudShader ->
             s.property
+        }.thenComparingInt { s: HudShader ->
+            s.rotationMode
+        }.thenComparingDouble { s: HudShader ->
+            s.rotationDegree
+        }.thenComparingDouble { s: HudShader ->
+            s.rotationHalfX
+        }.thenComparingDouble { s: HudShader ->
+            s.rotationHalfY
         }
     }
 

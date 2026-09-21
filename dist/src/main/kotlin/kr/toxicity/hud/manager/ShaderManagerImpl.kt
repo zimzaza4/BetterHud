@@ -152,6 +152,12 @@ object ShaderManagerImpl : BetterHudManager, ShaderManager {
             if (shader.gui.y != 0.0) arr.add("    yGui = ui.y * ${shader.gui.y.toFloat()} / 100.0;")
             if (shader.layer != 0) arr.add("    layer = ${shader.layer};")
             if (shader.outline != 0) arr.add("    outline = true;")
+            if (shader.rotationMode > 0) {
+                arr.add("    bhRotOn = true;")
+                arr.add("    bhRotDyn = ${shader.rotationMode == 2};")
+                arr.add("    bhRot = ${Math.toRadians(shader.rotationDegree).toFloat()};")
+                arr.add("    bhRotHalf = vec2(${shader.rotationHalfX.toFloat()}, ${shader.rotationHalfY.toFloat()});")
+            }
             arr.add("    break;")
             entry.value.forEach {
                 it(id)

@@ -20,13 +20,20 @@ class HudImageParser(parent: HudImpl, private val imageLayout: ImageLayout, gui:
     private val chars = run {
         val finalPixel = imageLayout.location + pixel
 
+        val rotation = imageLayout.rotation
+        val rotationScale = imageLayout.scale * imageLayout.source.scale
+        val rotationSize = imageLayout.source.image.firstOrNull()?.image?.image
         val shader = HudShader(
             gui,
             imageLayout.renderScale + pixel,
             imageLayout.layer,
             imageLayout.outline,
             finalPixel.opacity,
-            imageLayout.property
+            imageLayout.property,
+            rotation.mode,
+            rotation.bakedDegree,
+            (rotationSize?.width ?: 0).toDouble() * rotationScale / 2.0,
+            (rotationSize?.height ?: 0).toDouble() * rotationScale / 2.0,
         )
         val negativeSpace = parent.getOrCreateSpace(-1)
         fun ImageElement.toComponent(parentComponent: ImageComponent? = null): ImageComponent {
