@@ -119,6 +119,15 @@ class BetterHudImpl(val bootstrap: BetterHudBootstrap) : BetterHud {
                 debug(ConfigManager.DebugLevel.MANAGER, "Reloading ${it.managerName}...")
                 it.reload(DATA_FOLDER, info, resource)
             }
+            MountManager.mountedFolders.forEach { folder ->
+                if (!folder.isDirectory) return@forEach
+                managers.filter {
+                    it.supportExternalPacks
+                }.forEach {
+                    debug(ConfigManager.DebugLevel.MANAGER, "Reloading ${it.managerName} in ${folder.name}...")
+                    it.reload(folder, info, resource)
+                }
+            }
             managers.forEach {
                 it.postReload()
             }
@@ -175,6 +184,14 @@ class BetterHudImpl(val bootstrap: BetterHudBootstrap) : BetterHud {
         }
     }
 
+    override fun mountConfigFolder(folder: File) {
+        if (MountManager.mount(folder)) debug(ConfigManager.DebugLevel.MANAGER, "Mounted config folder: ${folder.absolutePath}")
+    }
+
+    override fun unmountConfigFolder(folder: File) {
+        if (MountManager.unmount(folder)) debug(ConfigManager.DebugLevel.MANAGER, "Unmounted config folder: ${folder.absolutePath}")
+    }
+
     private fun loadAssets(prefix: String, consumer: (String, InputStream) -> Unit) {
         JarFile(bootstrap.jarFile()).use {
             it.entries().asSequence().forEach { entry ->
@@ -211,6 +228,7 @@ class BetterHudImpl(val bootstrap: BetterHudBootstrap) : BetterHud {
     override fun getTextManager(): TextManager = TextManagerImpl
     override fun isOnReload(): Boolean = onReload.get()
     override fun getDefaultKey(): Key = DEFAULT_KEY
+    override fun getSpaceKey(): Key = SPACE_KEY
     override fun translate(locale: String, key: String): String? = TextManagerImpl.translate(locale, key)
     override fun isDevVersion(): Boolean = isDevVersion
 

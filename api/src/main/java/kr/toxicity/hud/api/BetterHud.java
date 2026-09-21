@@ -113,6 +113,32 @@ public interface BetterHud {
     void loadAssets(@NotNull String prefix, @NotNull BiConsumer<String, InputStream> consumer);
 
     /**
+     * Mounts an external config folder as an additional BetterHud config root.
+     * <p>
+     * The folder must have the same structure as BetterHud's data folder
+     * ({@code layouts/}, {@code huds/}, {@code images/}, {@code texts/}, {@code popups/},
+     * {@code compasses/}, {@code heads/}, {@code backgrounds/}, {@code fonts/}, {@code assets/}).
+     * Mounted folders take part in every reload until they are unmounted or BetterHud is disabled,
+     * and they are loaded <b>after</b> BetterHud's own folder. Whether a same-named definition is
+     * overwritten therefore depends on the kind of definition: most managers keep the one which was
+     * loaded first (BetterHud's own, with a "collision" warning), while a few (e.g. layouts and
+     * images) let the later one win. Do not rely on overriding BetterHud's own definitions.
+     * @param folder folder to mount
+     */
+    default void mountConfigFolder(@NotNull File folder) {
+        throw new UnsupportedOperationException("This BetterHud implementation does not support mounting config folders.");
+    }
+
+    /**
+     * Unmounts a config folder which was mounted by {@link #mountConfigFolder(File)}.
+     * It takes effect on the next reload.
+     * @param folder mounted folder
+     */
+    default void unmountConfigFolder(@NotNull File folder) {
+        throw new UnsupportedOperationException("This BetterHud implementation does not support mounting config folders.");
+    }
+
+    /**
      * Gets the width of default font's char
      * @param codepoint target codepoint
      * @return width
@@ -192,6 +218,15 @@ public interface BetterHud {
      * @return font key
      */
     @NotNull Key getDefaultKey();
+
+    /**
+     * Returns the font key of the space font, which every component of a hud carries.
+     * @return font key
+     */
+    @NotNull
+    default Key getSpaceKey() {
+        throw new UnsupportedOperationException("This BetterHud implementation does not expose the space font key.");
+    }
 
 
     /**

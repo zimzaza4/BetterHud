@@ -217,6 +217,7 @@ object ConfigManagerImpl : BetterHudManager, ConfigManager {
         }
     }
     override fun end() {
+        MountManager.clear()
     }
 
     override fun getBossbarLine(): Int = line
