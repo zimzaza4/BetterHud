@@ -31,8 +31,21 @@ internal fun gridOrigin(index: Int, perRow: Int, xSpace: Int, ySpace: Int): Pixe
 internal fun gridRowCount(index: Int, count: Int, perRow: Int): Int =
     (count - (index / perRow) * perRow).coerceIn(0, perRow)
 
-internal fun repeatVariables(index: Int, name: String, y: Int, variables: Map<String, Any>): Map<String, Any> =
-    mapOf("y" to y) + variables + (name to (index + 1))
+/**
+ * Variables of one instance.
+ *
+ * `variables` are the constants of the whole repeat, [entry] (from `entries`) is the data of *this*
+ * instance - so an entry wins over both the row offset `{y}` and the constants. The instance number
+ * (`as`, default `i`, one-based) is bound last and therefore wins over everything: an instance can
+ * always be asked which instance it is.
+ */
+internal fun repeatVariables(
+    index: Int,
+    name: String,
+    y: Int,
+    variables: Map<String, Any>,
+    entry: Map<String, Any> = emptyMap()
+): Map<String, Any> = mapOf("y" to y) + variables + entry + (name to (index + 1))
 
 class RepeatLayout(
     val id: String,
@@ -40,13 +53,40 @@ class RepeatLayout(
     private val section: YamlObject
 ) : ConditionSource by ConditionSource.Impl(section), PlaceholderSource by PlaceholderSource.Impl(section) {
 
-    private val sourceValue: String = section["source"]?.asString().ifNull { "source value not set: $id" }
-    val source: PlaceholderBuilder<*> = PlaceholderManagerImpl.find(sourceValue, this).assertNumber {
-        "this source is not a number: $sourceValue"
+    private val sourceValue: String? = section["source"]?.asString()
+    /**
+     * How many of the [max] instances to render, clamped into `0..max` at run time.
+     *
+     * Optional **when [entries] is set**: without it every instance is rendered, which is what a
+     * table of heterogeneous instances wants (each one carries its own conditions).
+     */
+    val source: PlaceholderBuilder<*>? = sourceValue?.let {
+        PlaceholderManagerImpl.find(it, this).assertNumber { "this source is not a number: $it" }
     }
 
-    val max: Int = section.getAsInt("max", -1).apply {
-        if (this < 1) throw RuntimeException("max must be at least 1: $id")
+    /**
+     * Per-instance data (`entries`): a list of maps, one map per instance.
+     *
+     * Each entry is substituted like `variables` is, only for its own instance - so one template can
+     * describe instances that differ in anything a string can carry (image name, coordinates,
+     * condition bounds, an offset expression, ...). Values are read as strings, exactly like
+     * `variables`; the instance itself converts a numeric looking string back to a number.
+     *
+     * With `entries` the number of instances is the size of the list and `max` must not be set.
+     */
+    private val entries: List<Map<String, Any>> = section["entries"]?.asArray()?.mapNotNull { element ->
+        runCatching {
+            LinkedHashMap<String, Any>().also { target ->
+                element.asObject().forEach { target[it.key] = it.value.asString() }
+            }
+        }.getOrNull()
+    } ?: emptyList()
+
+    private val maxValue: Int = section.getAsInt("max", -1)
+
+    /** Number of compiled instances: `entries.size`, or `max`. */
+    val max: Int = if (entries.isNotEmpty()) entries.size else maxValue.also {
+        if (it < 1) throw RuntimeException("max must be at least 1: $id")
     }
 
     val variable: String = section.getAsString("as", "i")
@@ -88,8 +128,13 @@ class RepeatLayout(
         when {
             template != null && inline -> throw RuntimeException("template and inline elements are both set: $id")
             template == null && !inline -> throw RuntimeException("neither template nor inline elements is set: $id")
+            entries.isNotEmpty() && section["max"] != null -> throw RuntimeException("max and entries are both set: $id")
+            entries.isEmpty() && source == null -> throw RuntimeException("source value not set: $id")
             positions > 1 -> throw RuntimeException("only one of grid, flow, offset and equation is allowed: $id")
-            positions == 0 -> throw RuntimeException("neither grid, flow, offset nor equation is set: $id")
+            // With `entries` no positioning key is needed: every instance sits on the group origin and
+            // carries its own coordinates inside the template (`x` / `y` / `position`).
+            positions == 0 && entries.isEmpty() ->
+                throw RuntimeException("neither grid, flow, offset nor equation is set: $id")
         }
     }
 
@@ -121,7 +166,13 @@ class RepeatLayout(
             name ?: id,
             sender,
             raw.substituted(
-                repeatVariables(index, variable, origin(index).y, variables),
+                repeatVariables(
+                    index,
+                    variable,
+                    origin(index).y,
+                    variables,
+                    entries.getOrElse(index) { emptyMap() }
+                ),
                 mapOf("offset" to "left")
             )
         )

@@ -26,7 +26,8 @@ class HudRepeatParser(
         }.getOrNull()
     }
     private val conditions = repeat.conditions build UpdateEvent.EMPTY
-    private val source = repeat.source build UpdateEvent.EMPTY
+    /** `source` is optional: without it every compiled instance is rendered (see `entries`). */
+    private val source = repeat.source?.build(UpdateEvent.EMPTY)
 
     fun getComponent(player: HudPlayer): Runner<List<PixelComponent>> {
         val renderer = instances.map {
@@ -34,7 +35,9 @@ class HudRepeatParser(
         }
         return Runner {
             if (conditions(player)) {
-                val count = (source(player) as Number).toDouble().roundToInt().coerceIn(0, instances.size)
+                val count = source?.let {
+                    (it(player) as Number).toDouble().roundToInt().coerceIn(0, instances.size)
+                } ?: instances.size
                 renderer.take(count).mapIndexed { index, runner ->
                     PixelComponent(runner(), (repeat.origin(index) + PixelLocation(repeat.shift(index, count), 0, 1.0)).x)
                 }

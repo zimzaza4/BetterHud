@@ -10,6 +10,7 @@ import kr.toxicity.command.impl.annotation.*
 import kr.toxicity.hud.api.adapter.LocationWrapper
 import kr.toxicity.hud.api.adapter.WorldWrapper
 import kr.toxicity.hud.api.configuration.HudObjectType
+import kr.toxicity.hud.api.manager.ShaderManager.ShaderType
 import kr.toxicity.hud.api.player.HudPlayer
 import kr.toxicity.hud.api.player.PointedLocation
 import kr.toxicity.hud.api.player.PointedLocationSource
@@ -541,6 +542,25 @@ object CommandManager : BetterHudManager {
                         }
                     }
                     //Pointer remove
+                })
+        }.children("shaders") {
+            it.aliases(arrayOf("shader"))
+                .description(CommandMessage("betterhud.shaders.description", Component.text("Manages the bundled shader files.")))
+                .permission("betterhud.shaders")
+                .executes(object : CommandListener {
+                    //Shaders reset
+                    private val reset_success = library.registerKey(CommandMessage("betterhud.shaders.reset.message.success", Component.text("Restored [count] shader file(s). Reload the plugin to apply them.")))
+                    private val reset_failure = library.registerKey(CommandMessage("betterhud.shaders.reset.message.failure", Component.text("Unable to restore the shader files. Check the console.")))
+                    @Command
+                    @Description(key = "betterhud.shaders.reset.description", defaultValue = "Restores the bundled shader files.")
+                    @Permission("betterhud.shaders.reset")
+                    fun reset(@Source me: BetterCommandSource) {
+                        val restored = ShaderType.entries.count {
+                            it.restore()
+                        }
+                        if (restored > 0) reset_success.send(me, mapOf("count" to Component.text(restored))) else reset_failure.send(me)
+                    }
+                    //Shaders reset
                 })
         }
 

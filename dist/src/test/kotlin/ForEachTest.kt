@@ -116,6 +116,32 @@ class ForEachTest {
     }
 
     @Test
+    fun testSubstitutedNumbers() {
+        // a substituted value that looks like a number becomes one; a literal "123" stays a string
+        val expanded = expand(
+            """
+            "cell_{i}":
+              for-each:
+                - { i: 1, x: 150, scale: 1.3, name: "123" }
+                - { i: 2, x: -7, scale: 0.75, name: "ce_1" }
+              name: "{name}"
+              x: "{x}"
+              scale: "{scale}"
+              literal: "123"
+            """.trimIndent()
+        )
+        val first = expanded.entry("cell_1")
+        assertEquals(150, first["x"]!!.asInt())
+        assertEquals(1.3, first["scale"]!!.asDouble())
+        assertEquals("123", first["name"]!!.asString())
+        assertEquals("123", first["literal"]!!.asString())
+        val second = expanded.entry("cell_2")
+        assertEquals(-7, second["x"]!!.asInt())
+        assertEquals(0.75, second["scale"]!!.asDouble())
+        assertEquals("ce_1", second["name"]!!.asString())
+    }
+
+    @Test
     fun testUntouched() {
         val expanded = expand(
             """

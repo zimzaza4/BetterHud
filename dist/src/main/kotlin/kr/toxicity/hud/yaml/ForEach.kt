@@ -5,6 +5,7 @@ import kr.toxicity.hud.util.toYaml
 
 private const val FOR_EACH = "for-each"
 private val INTEGER = Regex("-?\\d+")
+private val DECIMAL = Regex("-?\\d+\\.\\d+")
 
 fun YamlObject.forEachExpanded(block: (String, YamlObject) -> Unit) {
     get().forEach { (key, value) ->
@@ -84,7 +85,15 @@ private fun Any.substitute(variables: Map<String, Any>): Any = when (this) {
     }
     is String -> {
         val filled = fill(variables)
-        if (filled != this && INTEGER.matches(filled)) filled.toInt() else filled
+        // A substituted value that looks like a number turns back into one, so a variable can feed a
+        // numeric key (`scale: "{scale}"`) as well as a string one. Only a value substitution actually
+        // touched is converted - a literal `"123"` stays the string it was written as.
+        when {
+            filled == this -> filled
+            INTEGER.matches(filled) -> filled.toInt()
+            DECIMAL.matches(filled) -> filled.toDouble()
+            else -> filled
+        }
     }
     else -> this
 }

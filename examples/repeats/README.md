@@ -24,6 +24,9 @@ ce_team_layout:
 instances only. The ones past `count` cost nothing per tick, and the ones past `max` do not exist
 at all - a larger number is silently truncated.
 
+With `entries` the table itself decides: the number of instances is the size of the list, `max` is
+not allowed next to it and `source` becomes optional (without it every instance is rendered).
+
 Everything a template names has to exist for every instance up to `max`. An instance whose `{slot}`
 resolves to a missing image, text or head is dropped with a log line of its own while the rest of
 the row still loads, so give the families it names a `for-each: slot: 1..max` and the two ranges
@@ -33,8 +36,9 @@ cannot drift apart.
 
 | key | | meaning |
 |---|---|---|
-| `source` | required | number placeholder giving `count` |
-| `max` | required | how many instances to compile (>= 1) |
+| `source` | required | number placeholder giving `count`; optional with `entries` (= all instances) |
+| `max` | one of | how many instances to compile (>= 1); not with `entries` |
+| `entries` | one of | a table of per-instance values: one map per instance, its size is `max` |
 | `template` | one of | name of a layout whose root is marked `template: true` |
 | `images` / `texts` / `heads` | one of | inline elements instead of a template |
 | `offset` | one of | `{dx, dy}`: instance `k` sits at `pixel + k * (dx, dy)` |
@@ -89,6 +93,48 @@ grows leftwards and `dy: 20` grows downwards.
 `align` shifts the whole row at run time by the current `count`: `start` keeps the first instance
 on the origin, `center` centres the row on it, `end` puts the last instance there. With `grid` the
 shift is computed per row, so a short last row is centred on its own.
+
+## Per-instance data (`entries`)
+
+`variables` are the same for every instance. When the instances differ in something more than their
+number, write the difference down instead of writing the elements out: `entries` is a list of maps,
+one map per instance, and every map is substituted into that instance only.
+
+```yaml
+  repeats:
+    cells:
+      template: ce_cell_widget
+      entries:
+        - { name: ce_wall_0_0, x: 150, y: 150, sx: -94, sy: -73 }
+        - { name: ce_wall_1_0, x: 236, y: 150, sx:  -8, sy: -73 }
+```
+
+```yaml
+ce_cell_widget:
+  template: true
+  images:
+    cell:
+      name: "{name}"
+      x: "{x}"
+      y: "{y}"
+      position: ["dx@(t + {sx})", "dy@(t + {sy})"]
+```
+
+* the list decides how many instances are compiled - `max` must not be set next to it;
+* `source` becomes optional: without it every instance is rendered (each one carries its own
+  conditions in the template), with it `source` still clamps the row to the first `count` instances;
+* an entry wins over `{y}` and over `variables`; the instance number (`as`, default `i`) is bound
+  last and still wins over everything - in the template `{i}` / `{slot}` is always that number;
+* with `entries` no positioning key is needed: every instance sits on the group origin and carries
+  its own coordinates (`x`, `y`, `pixel`, `position`). `grid` / `offset` / `flow` still work when the
+  rows need to be laid out;
+* values are read as strings, exactly like `variables`, and a value that looks like a number turns
+  back into one: `x: "{x}"` stays a number, and an expression takes a negative value
+  (`t + -94` parses, so `sx: -94` is fine).
+
+A table is what turns a repeat into "one widget, N heterogeneous instances": all of a map's tiles
+are the same element with a different image, different coordinates and different condition bounds,
+which no pitch can express.
 
 ## Wrapping into rows
 
