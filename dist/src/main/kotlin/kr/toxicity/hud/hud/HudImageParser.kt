@@ -11,6 +11,7 @@ import kr.toxicity.hud.layout.ImageLayout
 import kr.toxicity.hud.renderer.ImageRenderer
 import kr.toxicity.hud.location.GuiLocation
 import kr.toxicity.hud.shader.HudShader
+import kr.toxicity.hud.shader.Rotation
 import kr.toxicity.hud.util.*
 import net.kyori.adventure.text.Component
 import kotlin.math.roundToInt
@@ -30,10 +31,14 @@ class HudImageParser(parent: HudImpl, private val imageLayout: ImageLayout, gui:
             imageLayout.outline,
             finalPixel.opacity,
             imageLayout.property,
-            rotation.mode,
             rotation.bakedDegree,
+            rotation is Rotation.Dynamic,
+            imageLayout.positionX != null || imageLayout.positionY != null,
             (rotationSize?.width ?: 0).toDouble() * rotationScale / 2.0,
             (rotationSize?.height ?: 0).toDouble() * rotationScale / 2.0,
+            imageLayout.positionInRotatedSpace,
+            imageLayout.clipInner,
+            imageLayout.clipOuter,
         )
         val negativeSpace = parent.getOrCreateSpace(-1)
         fun ImageElement.toComponent(parentComponent: ImageComponent? = null): ImageComponent {

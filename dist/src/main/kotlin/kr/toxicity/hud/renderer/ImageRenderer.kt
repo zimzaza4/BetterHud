@@ -32,6 +32,8 @@ class ImageRenderer(
         val mapper = component mapper event
         val colorApply = colorOverrides(event)
         val rotationGetter = (rotation as? Rotation.Dynamic)?.degree?.build(event)
+        val positionXGetter = positionX?.build(event)
+        val positionYGetter = positionY?.build(event)
 
         return tickProvide(tick) build@ { player, frame ->
             val selected = mapper(player)
@@ -62,8 +64,14 @@ class ImageRenderer(
                     empty.applyColor(colorApply(target))
                 } else {
                     val rendered = component.type.getComponent(listen, frame, selected, target)
-                    if (rotationGetter != null) {
-                        rendered.applyRotationPayload((rotationGetter.value(target) as? Number)?.toDouble() ?: 0.0)
+                    if (rotationGetter != null || positionXGetter != null) {
+                        rendered.applyTransformPayload(
+                            rotationGetter != null,
+                            positionXGetter != null,
+                            (rotationGetter?.value(target) as? Number)?.toDouble() ?: 0.0,
+                            (positionXGetter?.value(target) as? Number)?.toInt() ?: 0,
+                            (positionYGetter?.value(target) as? Number)?.toInt() ?: 0
+                        )
                     } else rendered.applyColor(colorApply(target))
                 }
             } else {

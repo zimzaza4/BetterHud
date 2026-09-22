@@ -4,6 +4,7 @@ import kr.toxicity.hud.api.component.PixelComponent
 import kr.toxicity.hud.api.component.WidthComponent
 import kr.toxicity.hud.api.version.MinecraftVersion
 import kr.toxicity.hud.manager.ConfigManagerImpl
+import kr.toxicity.hud.shader.PayloadKind
 import net.kyori.adventure.key.Key
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.ComponentLike
@@ -227,6 +228,63 @@ fun PixelComponent.applyRotationPayload(degree: Double): PixelComponent = apply 
     val normalized = ((degree % 360.0) + 360.0) % 360.0
     val bits = (normalized / 360.0 * 65535.0).roundToInt().coerceIn(0, 65535)
     component.component.color(TextColor.color(bits shr 8 and 0xFF, bits and 0xFF, 0))
+}
+
+/**
+ * Replaces this component's colour with a pixel offset payload.
+ *
+ * The x offset is packed into red/green (12 bit) and the y offset into green/blue (12 bit), so the
+ * vertex shader can move the glyph anywhere inside a 4096x4096 pixel area.
+ * @param dx x offset in gui pixels
+ * @param dy y offset in gui pixels
+ */
+fun PixelComponent.applyPositionPayload(dx: Int, dy: Int): PixelComponent = apply {
+    val x = dx.coerceIn(-2048, 2047) + 2048
+    val y = dy.coerceIn(-2048, 2047) + 2048
+    component.component.color(TextColor.color(
+        x shr 4 and 0xFF,
+        (x and 0x0F) shl 4 or (y shr 8 and 0x0F),
+        y and 0xFF
+    ))
+}
+
+/**
+ * Replaces this component's colour with a rotation and a pixel offset payload.
+ *
+ * One channel per value fits both into a single colour: the angle loses resolution (8 bit, about
+ * 1.4 degree per step) and so does the offset (8 bit signed, 127 pixels at most).
+ * @param degree angle in degrees
+ * @param dx x offset in gui pixels
+ * @param dy y offset in gui pixels
+ */
+fun PixelComponent.applyRotationPositionPayload(degree: Double, dx: Int, dy: Int): PixelComponent = apply {
+    val normalized = ((degree % 360.0) + 360.0) % 360.0
+    component.component.color(TextColor.color(
+        (normalized / 360.0 * 255.0).roundToInt().coerceIn(0, 255),
+        dx.coerceIn(-128, 127) + 128,
+        dy.coerceIn(-128, 127) + 128
+    ))
+}
+
+/**
+ * Builds the payload of an element which carries per-frame data.
+ * @param rotationDynamic whether the angle is evaluated per update
+ * @param positionDynamic whether the offset is evaluated per update
+ * @param degree angle in degrees
+ * @param dx x offset in gui pixels
+ * @param dy y offset in gui pixels
+ */
+fun PixelComponent.applyTransformPayload(
+    rotationDynamic: Boolean,
+    positionDynamic: Boolean,
+    degree: Double,
+    dx: Int,
+    dy: Int
+): PixelComponent = when (PayloadKind.of(rotationDynamic, positionDynamic)) {
+    PayloadKind.ROTATION -> applyRotationPayload(degree)
+    PayloadKind.POSITION -> applyPositionPayload(dx, dy)
+    PayloadKind.ROTATION_POSITION -> applyRotationPositionPayload(degree, dx, dy)
+    else -> this
 }
 infix fun PixelComponent.shadow(shadow: Int): PixelComponent = apply {
     component shadow shadow

@@ -8,6 +8,7 @@ import kr.toxicity.hud.pack.PackGenerator
 import kr.toxicity.hud.pack.PackOverlay
 import kr.toxicity.hud.resource.GlobalResource
 import kr.toxicity.hud.shader.HudShader
+import kr.toxicity.hud.shader.PayloadKind
 import kr.toxicity.hud.util.*
 import net.kyori.adventure.bossbar.BossBar
 import java.awt.image.BufferedImage
@@ -126,11 +127,16 @@ object ShaderManagerImpl : BetterHudManager, ShaderManager {
                 }
             }
             if (yaml.getAsBoolean("disable-level-text", false)) replaceSet += "HideExp"
-            compileShader(resource)
+            // 这里不能立刻编译：ShaderManager 不支持外部包，所以在"自己的配置目录"这一轮就编译并清空
+            // hudShaders 的话，之后挂载文件夹里的 layout/hud 再通过 createAscent 注册的 font provider 就丢了
+            // —— 那些字形在资源包里只有贴图、没有 font json，客户端渲染成方块。推迟到 postReload（所有挂载处理完之后）。
+            pendingResource = resource
         }.handleFailure(info) {
             "Unable to load shader.yml"
         }
     }
+
+    private var pendingResource: GlobalResource? = null
 
     private fun compileShader(resource: GlobalResource) {
         compiledLayout = hudShaders.entries.foldIndexed(arrayListOf()) { index, arr, entry ->
@@ -152,11 +158,19 @@ object ShaderManagerImpl : BetterHudManager, ShaderManager {
             if (shader.gui.y != 0.0) arr.add("    yGui = ui.y * ${shader.gui.y.toFloat()} / 100.0;")
             if (shader.layer != 0) arr.add("    layer = ${shader.layer};")
             if (shader.outline != 0) arr.add("    outline = true;")
-            if (shader.rotationMode > 0) {
+            val payload = PayloadKind.of(shader.rotationDynamic, shader.positionDynamic)
+            if (payload > 0 || shader.rotationDegree != 0.0 || shader.clipOuter > 0.0) {
                 arr.add("    bhRotOn = true;")
-                arr.add("    bhRotDyn = ${shader.rotationMode == 2};")
                 arr.add("    bhRot = ${Math.toRadians(shader.rotationDegree).toFloat()};")
                 arr.add("    bhRotHalf = vec2(${shader.rotationHalfX.toFloat()}, ${shader.rotationHalfY.toFloat()});")
+                arr.add("    bhPayload = $payload;")
+                // Rotate the payload offset together with the element (see HudLayout.positionInRotatedSpace).
+                // The uniform was named bhOfsMapSpace while the name leaked from a minimap use case.
+                arr.add("    bhRotateOffset = ${shader.positionInRotatedSpace};")
+                if (shader.clipOuter > 0.0) {
+                    arr.add("    bhClipIn = ${shader.clipInner.toFloat()};")
+                    arr.add("    bhClipOut = ${shader.clipOuter.toFloat()};")
+                }
             }
             arr.add("    break;")
             entry.value.forEach {
@@ -219,6 +233,14 @@ object ShaderManagerImpl : BetterHudManager, ShaderManager {
                 }
             }.toByteArray()
             key.shadersCoreNames.map { it to bytes }
+        }
+    }
+
+    override fun postReload() {
+        // 所有（含挂载的）layout/hud 都注册完 createAscent 之后再编译一次，保证 case id 与 font provider 齐全。
+        pendingResource?.let {
+            pendingResource = null
+            compileShader(it)
         }
     }
 

@@ -36,6 +36,7 @@ uniform sampler2D Sampler2;
 
 out vec4 vertexColor;
 out vec2 texCoord0;
+out vec4 bhClip;
 
 bool range(float t, float m1, float m2) {
     return t >= m1 && t <= m2;
@@ -76,9 +77,13 @@ void main() {
     vec3 color = Color.xyz;
     vertexColor = Color;
     bool bhRotOn = false;
-    bool bhRotDyn = false;
     float bhRot = 0.0;
     vec2 bhRotHalf = vec2(0.0);
+    int bhPayload = 0;
+    bool bhRotateOffset = false;   // rotate the payload offset together with the element
+    float bhClipIn = 0.0;
+    float bhClipOut = 0.0;
+    bhClip = vec4(0.0);
     if (pos.y >= ui.y && ProjMat[3].x == -1) {
         int bit = int(pos.y) >> HEIGHT_BIT;
 
@@ -148,9 +153,23 @@ void main() {
 //HideExp        }
     }
     if (bhRotOn) {
-        if (bhRotDyn) {
+        vec2 bhOfs = vec2(0.0);
+        if (bhPayload == 1) {
             int bhBits = int(vertexColor.x * 255.0 + 0.5) * 256 + int(vertexColor.y * 255.0 + 0.5);
             bhRot = float(bhBits) / 65535.0 * 6.283185307;
+        } else if (bhPayload == 2) {
+            int bhRx = int(vertexColor.x * 255.0 + 0.5);
+            int bhGy = int(vertexColor.y * 255.0 + 0.5);
+            int bhBz = int(vertexColor.z * 255.0 + 0.5);
+            bhOfs = vec2(
+                float((bhRx << 4) + (bhGy >> 4)) - 2048.0,
+                float(((bhGy & 15) << 8) + bhBz) - 2048.0
+            );
+        } else if (bhPayload == 3) {
+            bhRot = vertexColor.x * 6.283185307;
+            bhOfs = vec2(vertexColor.y * 255.0 - 128.0, vertexColor.z * 255.0 - 128.0);
+        }
+        if (bhPayload > 0) {
             vertexColor = vec4(1.0, 1.0, 1.0, vertexColor.w);
         }
         float bhCi = float(gl_VertexID % 4);
@@ -158,8 +177,12 @@ void main() {
         vec2 bhPivot = pos.xy - bhCs * bhRotHalf;
         float bhCa = cos(bhRot);
         float bhSa = sin(bhRot);
+        if (bhRotateOffset) {
+            bhOfs = vec2(bhCa * bhOfs.x - bhSa * bhOfs.y, bhSa * bhOfs.x + bhCa * bhOfs.y);
+        }
         vec2 bhD = pos.xy - bhPivot;
-        pos.xy = bhPivot + vec2(bhCa * bhD.x - bhSa * bhD.y, bhSa * bhD.x + bhCa * bhD.y);
+        pos.xy = bhPivot + vec2(bhCa * bhD.x - bhSa * bhD.y, bhSa * bhD.x + bhCa * bhD.y) + bhOfs;
+        bhClip = vec4(pos.xy - bhPivot, bhClipIn, bhClipOut);
     }
 #if !defined(IS_GUI) && !defined(IS_SEE_THROUGH)
     vertexColor *= sample_lightmap(Sampler2, UV2);

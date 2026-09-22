@@ -2,6 +2,7 @@ import kr.toxicity.hud.location.GuiLocation
 import kr.toxicity.hud.location.PixelLocation
 import kr.toxicity.hud.placeholder.PlaceholderSource
 import kr.toxicity.hud.shader.HudShader
+import kr.toxicity.hud.shader.PayloadKind
 import kr.toxicity.hud.shader.RenderScale
 import kr.toxicity.hud.shader.Rotation
 import kr.toxicity.hud.util.toRotation
@@ -41,24 +42,35 @@ class RotationTest {
 
     @Test
     fun testRotationIsPartOfShaderIdentity() {
-        val base = shader(0, 0.0)
-        val rotated = shader(1, 25.0)
-        assertNotEquals(base, rotated)
-        assertTrue(base.compareTo(rotated) != 0)
-        assertTrue(rotated.compareTo(base) != 0)
-        // same rotation must stay the same key, otherwise every glyph gets its own shader id
-        assertEquals(0, base.compareTo(shader(0, 0.0)))
+        val plain = shader(false, false, 0.0)
+        val rotated = shader(false, false, 25.0)
+        assertNotEquals(plain, rotated)
+        assertTrue(plain.compareTo(rotated) != 0)
+        assertTrue(rotated.compareTo(plain) != 0)
+        // the same transform must stay the same key, otherwise every glyph gets its own shader id
+        assertEquals(0, plain.compareTo(shader(false, false, 0.0)))
+        assertNotEquals(0, plain.compareTo(shader(true, false, 0.0)))
+        assertNotEquals(0, plain.compareTo(shader(false, true, 0.0)))
     }
 
-    private fun shader(mode: Int, degree: Double) = HudShader(
+    @Test
+    fun testPayloadKind() {
+        assertEquals(PayloadKind.NONE, PayloadKind.of(false, false))
+        assertEquals(PayloadKind.ROTATION, PayloadKind.of(true, false))
+        assertEquals(PayloadKind.POSITION, PayloadKind.of(false, true))
+        assertEquals(PayloadKind.ROTATION_POSITION, PayloadKind.of(true, true))
+    }
+
+    private fun shader(rotationDynamic: Boolean, positionDynamic: Boolean, degree: Double) = HudShader(
         GuiLocation(0.0, 0.0),
         RenderScale(PixelLocation.zero, RenderScale.Scale(1.0, 1.0, false)),
         0,
         0,
         1.0,
         0,
-        mode,
         degree,
+        rotationDynamic,
+        positionDynamic,
         64.0,
         64.0,
     )

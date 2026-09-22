@@ -9,6 +9,7 @@ import kr.toxicity.hud.manager.PlaceholderManagerImpl
 import kr.toxicity.hud.placeholder.ColorOverride
 import kr.toxicity.hud.placeholder.ConditionBuilder
 import kr.toxicity.hud.placeholder.Conditions
+import kr.toxicity.hud.placeholder.PlaceholderBuilder
 import kr.toxicity.hud.placeholder.PlaceholderSource
 import kr.toxicity.hud.shader.Rotation
 import kr.toxicity.hud.yaml.YamlArrayImpl
@@ -102,6 +103,19 @@ fun YamlObject.toRotation(source: PlaceholderSource): Rotation {
     return Rotation.Dynamic(
         PlaceholderManagerImpl.find(raw, source).assertNumber("this rotation is not a number: $raw")
     )
+}
+
+/**
+ * Reads one axis of `position: [x, y]`.
+ *
+ * Both entries are number placeholders which are evaluated for every player on every update and
+ * become a pixel offset that the vertex shader applies to the glyph.
+ * @param source placeholder source
+ * @param index 0 for x, 1 for y
+ */
+fun YamlObject.toPosition(source: PlaceholderSource, index: Int): PlaceholderBuilder<*>? {
+    val raw = get("position")?.asArray()?.elementAtOrNull(index)?.asString() ?: return null
+    return PlaceholderManagerImpl.find(raw, source).assertNumber("this position is not a number: $raw")
 }
 
 fun YamlObject.getTEquation(key: String) = get(key)?.asString()?.let {
