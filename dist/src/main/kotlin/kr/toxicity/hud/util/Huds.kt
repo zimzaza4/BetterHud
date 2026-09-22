@@ -12,7 +12,7 @@ import kr.toxicity.hud.shader.HudShader
 import kr.toxicity.hud.text.BackgroundKey
 
 
-const val HUD_DEFAULT_BIT = 13
+const val HUD_DEFAULT_BIT = 15
 const val HUD_MAX_BIT = 23 - HUD_DEFAULT_BIT
 const val HUD_ADD_HEIGHT = (1 shl HUD_DEFAULT_BIT - 1) - 1
 

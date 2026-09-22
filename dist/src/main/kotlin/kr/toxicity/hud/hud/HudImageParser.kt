@@ -39,6 +39,9 @@ class HudImageParser(parent: HudImpl, private val imageLayout: ImageLayout, gui:
             imageLayout.positionInRotatedSpace,
             imageLayout.clipInner,
             imageLayout.clipOuter,
+            imageLayout.clipOriginX ?: 0.0,
+            imageLayout.clipOriginY ?: 0.0,
+            imageLayout.clipOriginX != null && imageLayout.clipOriginY != null,
         )
         val negativeSpace = parent.getOrCreateSpace(-1)
         fun ImageElement.toComponent(parentComponent: ImageComponent? = null): ImageComponent {

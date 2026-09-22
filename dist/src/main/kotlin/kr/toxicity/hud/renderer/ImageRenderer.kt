@@ -63,16 +63,19 @@ class ImageRenderer(
                     }
                     empty.applyColor(colorApply(target))
                 } else {
-                    val rendered = component.type.getComponent(listen, frame, selected, target)
+                    // payload and colour are applied to a copy now, so the returned value
+                    // has to be used: writing them into the component in place leaked one
+                    // player's rotation/offset into every other player sharing that cache.
+                    val base = component.type.getComponent(listen, frame, selected, target)
                     if (rotationGetter != null || positionXGetter != null) {
-                        rendered.applyTransformPayload(
+                        base.applyTransformPayload(
                             rotationGetter != null,
                             positionXGetter != null,
                             (rotationGetter?.value(target) as? Number)?.toDouble() ?: 0.0,
                             (positionXGetter?.value(target) as? Number)?.toInt() ?: 0,
                             (positionYGetter?.value(target) as? Number)?.toInt() ?: 0
                         )
-                    } else rendered.applyColor(colorApply(target))
+                    } else base.applyColor(colorApply(target))
                 }
             } else {
                 if (clearListener) listen.clear(player)

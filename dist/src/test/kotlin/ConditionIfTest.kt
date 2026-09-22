@@ -73,4 +73,15 @@ class ConditionIfTest {
         // 嵌套里的 all 仍然是合取：两支不可能同时成立 → false
         assertFalse(evaluate("if:\n  any:\n    - all:\n        - \"120 >= 112.5\"\n        - \"120 <= -112.5\""))
     }
+
+    @Test
+    fun testFlatAndChain() {
+        // 平铺的 "a && b && c && d" 也是完整合取：四个子句全部参与求值
+        assertTrue(evaluate("if: \"'a' == 'a' && 'b' == 'b' && 'c' == 'c' && 'd' == 'd'\""))
+        // canary: 若退化成"只认前两个子句"，这两条会被误判为 true
+        assertFalse(evaluate("if: \"'a' == 'a' && 'b' == 'b' && 'c' == 'c' && 'd' == 'e'\""))
+        assertFalse(evaluate("if: \"'a' == 'a' && 'b' == 'b' && 'c' == 'x' && 'd' == 'd'\""))
+        // 最前面两个之一为假也要拦住
+        assertFalse(evaluate("if: \"'a' == 'b' && 'b' == 'b' && 'c' == 'c' && 'd' == 'd'\""))
+    }
 }

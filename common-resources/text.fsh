@@ -42,9 +42,9 @@ void main() {
 
     #GenerateOtherMainMethod
 
-    //bhClip: xy = 相对元素中心的像素偏移, z = 内径, w = 外径（外径 0 表示不裁剪）
-    //  内径 0        -> 圆盘（保留半径内）
-    //  内径 > 0      -> 圆环（只保留 [内径, 外径] 这一段）
+    //bhClip: xy = pixel offset from the element center, z = inner radius, w = outer radius (0 = no clip)
+    //  inner 0    -> disc (keep everything inside the radius)
+    //  inner > 0  -> ring (keep only the [inner, outer] band)
     if (bhClip.w > 0.0) {
         float bhClipLen = length(bhClip.xy);
         if (bhClipLen > bhClip.w || bhClipLen < bhClip.z) {

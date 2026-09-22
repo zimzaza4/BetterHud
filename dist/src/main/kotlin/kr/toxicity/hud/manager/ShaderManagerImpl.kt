@@ -127,9 +127,10 @@ object ShaderManagerImpl : BetterHudManager, ShaderManager {
                 }
             }
             if (yaml.getAsBoolean("disable-level-text", false)) replaceSet += "HideExp"
-            // 这里不能立刻编译：ShaderManager 不支持外部包，所以在"自己的配置目录"这一轮就编译并清空
-            // hudShaders 的话，之后挂载文件夹里的 layout/hud 再通过 createAscent 注册的 font provider 就丢了
-            // —— 那些字形在资源包里只有贴图、没有 font json，客户端渲染成方块。推迟到 postReload（所有挂载处理完之后）。
+            // Do not compile here: ShaderManager does not support external packs, so compiling and clearing
+            // hudShaders during our own config pass would drop the font providers that mounted folders register
+            // afterwards through createAscent - those glyphs would ship as textures without a font json and the
+            // client would draw boxes. Defer to postReload, once every mounted folder has been processed.
             pendingResource = resource
         }.handleFailure(info) {
             "Unable to load shader.yml"
@@ -143,6 +144,10 @@ object ShaderManagerImpl : BetterHudManager, ShaderManager {
             val shader = entry.key
             val id = index + 1
             arr.add("case ${id}:")
+            // The element's own position (animation offset + element pixel offset), emitted unconditionally.
+            // NOTE: nothing reads bhAnchorX/Y yet - the shader derives the pivot from the glyph center (text.vsh).
+            arr.add("    bhAnchorX = ${shader.renderScale.relativeOffset.x.toDouble()};")
+            arr.add("    bhAnchorY = ${shader.renderScale.relativeOffset.y.toDouble()};")
             if (shader.property > 0) arr.add("    property = ${shader.property};")
             if (shader.opacity < 1.0) arr.add("    opacity = ${shader.opacity.toFloat()};")
             val static = shader.renderScale.scale.staticScale
@@ -170,6 +175,12 @@ object ShaderManagerImpl : BetterHudManager, ShaderManager {
                 if (shader.clipOuter > 0.0) {
                     arr.add("    bhClipIn = ${shader.clipInner.toFloat()};")
                     arr.add("    bhClipOut = ${shader.clipOuter.toFloat()};")
+                    // Only emit these two lines when a clip-origin was given explicitly; every other element
+                    // keeps byte-for-byte the behaviour it had before.
+                    if (shader.hasClipOrigin) {
+                        arr.add("    bhClipHasOrigin = true;")
+                        arr.add("    bhClipOrigin = vec2(${shader.clipOriginX.toFloat()}, ${shader.clipOriginY.toFloat()});")
+                    }
                 }
             }
             arr.add("    break;")
@@ -237,7 +248,8 @@ object ShaderManagerImpl : BetterHudManager, ShaderManager {
     }
 
     override fun postReload() {
-        // 所有（含挂载的）layout/hud 都注册完 createAscent 之后再编译一次，保证 case id 与 font provider 齐全。
+        // Compile once every layout/hud (including mounted ones) has registered its createAscent callback,
+        // so the case ids and the font providers are complete.
         pendingResource?.let {
             pendingResource = null
             compileShader(it)

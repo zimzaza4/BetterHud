@@ -224,10 +224,13 @@ infix fun PixelComponent.applyColor(color: TextColor?): PixelComponent = if (col
  * the vertex shader can read it back from the glyph's vertex colour.
  * @param degree angle in degrees
  */
-fun PixelComponent.applyRotationPayload(degree: Double): PixelComponent = apply {
+fun PixelComponent.applyRotationPayload(degree: Double): PixelComponent {
     val normalized = ((degree % 360.0) + 360.0) % 360.0
     val bits = (normalized / 360.0 * 65535.0).roundToInt().coerceIn(0, 65535)
-    component.component.color(TextColor.color(bits shr 8 and 0xFF, bits and 0xFF, 0))
+    // Write the payload into a copy: components are cached and shared between players
+    // (ImageType.SINGLE hands out its cached instance), so an in-place write made the
+    // player rendered last overwrite everyone else's rotation/offset.
+    return copy().also { it.component.component.color(TextColor.color(bits shr 8 and 0xFF, bits and 0xFF, 0)) }
 }
 
 /**
@@ -238,14 +241,16 @@ fun PixelComponent.applyRotationPayload(degree: Double): PixelComponent = apply 
  * @param dx x offset in gui pixels
  * @param dy y offset in gui pixels
  */
-fun PixelComponent.applyPositionPayload(dx: Int, dy: Int): PixelComponent = apply {
+fun PixelComponent.applyPositionPayload(dx: Int, dy: Int): PixelComponent {
     val x = dx.coerceIn(-2048, 2047) + 2048
     val y = dy.coerceIn(-2048, 2047) + 2048
-    component.component.color(TextColor.color(
-        x shr 4 and 0xFF,
-        (x and 0x0F) shl 4 or (y shr 8 and 0x0F),
-        y and 0xFF
-    ))
+    return copy().also {
+        it.component.component.color(TextColor.color(
+            x shr 4 and 0xFF,
+            (x and 0x0F) shl 4 or (y shr 8 and 0x0F),
+            y and 0xFF
+        ))
+    }
 }
 
 /**
@@ -257,13 +262,15 @@ fun PixelComponent.applyPositionPayload(dx: Int, dy: Int): PixelComponent = appl
  * @param dx x offset in gui pixels
  * @param dy y offset in gui pixels
  */
-fun PixelComponent.applyRotationPositionPayload(degree: Double, dx: Int, dy: Int): PixelComponent = apply {
+fun PixelComponent.applyRotationPositionPayload(degree: Double, dx: Int, dy: Int): PixelComponent {
     val normalized = ((degree % 360.0) + 360.0) % 360.0
-    component.component.color(TextColor.color(
-        (normalized / 360.0 * 255.0).roundToInt().coerceIn(0, 255),
-        dx.coerceIn(-128, 127) + 128,
-        dy.coerceIn(-128, 127) + 128
-    ))
+    return copy().also {
+        it.component.component.color(TextColor.color(
+            (normalized / 360.0 * 255.0).roundToInt().coerceIn(0, 255),
+            dx.coerceIn(-128, 127) + 128,
+            dy.coerceIn(-128, 127) + 128
+        ))
+    }
 }
 
 /**
@@ -304,8 +311,10 @@ infix fun WidthComponent.applyColor(color: TextColor?): WidthComponent = when (c
         val finalColor = component.build().color()?.let {
             it * color
         } ?: color
+        // Same reason as the payload helpers: color the copy, not the cached builder this
+        // WidthComponent was built from, or the next player inherits this player's tint.
         WidthComponent(
-            component.color(finalColor),
+            component.build().toBuilder().color(finalColor),
             width
         )
     }

@@ -29,6 +29,8 @@ interface HudLayout<T : HudElement> : ConditionSource, PlaceholderSource {
     val positionInRotatedSpace: Boolean
     val clipInner: Double
     val clipOuter: Double
+    val clipOriginX: Double?
+    val clipOriginY: Double?
 
     interface Identifier {
         val name: String
@@ -69,5 +71,24 @@ interface HudLayout<T : HudElement> : ConditionSource, PlaceholderSource {
             yaml.getAsBoolean("position-in-rotated-space", yaml.getAsBoolean("position-in-map-space", false))
         override val clipInner: Double = yaml.getAsDouble("clip-inner", 0.0).coerceAtLeast(0.0)
         override val clipOuter: Double = yaml.getAsDouble("clip", 0.0).coerceAtLeast(0.0)
+        // Clip circle center (GUI/font units, same unit as clip). Null when absent - the shader then keeps
+        // clipping around the element's own center (bhPivot). Both values must be present, or both are ignored.
+        override val clipOriginX: Double? = yaml.clipOriginAt(0)
+        override val clipOriginY: Double? = yaml.clipOriginAt(1)
     }
+}
+
+private val SPACE = "\\s+".toRegex()
+
+/**
+ * Reads one axis of `clip-origin`: either an array entry or a whitespace separated string (`"192 192"`).
+ * Mirrors [kr.toxicity.hud.location.GuiLocation.at]; a malformed value reads as null, so the element keeps
+ * clipping around its own center instead of silently clipping around (0, 0).
+ */
+private fun YamlObject.clipOriginAt(index: Int): Double? {
+    val origin = get("clip-origin") ?: return null
+    return runCatching {
+        origin.asArray().elementAtOrNull(index)?.asString()?.toDoubleOrNull()
+            ?: origin.asString().trim().split(SPACE).getOrNull(index)?.toDoubleOrNull()
+    }.getOrNull()
 }

@@ -20,6 +20,14 @@ data class HudShader(
     val positionInRotatedSpace: Boolean = false,
     val clipInner: Double = 0.0,
     val clipOuter: Double = 0.0,
+    // Explicit clip circle center (optional). Ignored unless hasClipOrigin is true, in which case the shader
+    // uses it instead of the element's own center (bhPivot).
+    // All three must stay in the compareTo chain: HudShader is the key of the TreeMap that assigns case ids,
+    // so two elements differing only in clip-origin would collapse into one key and share a case body -
+    // one of them would then clip against the other's center.
+    val clipOriginX: Double = 0.0,
+    val clipOriginY: Double = 0.0,
+    val hasClipOrigin: Boolean = false,
 ) : Comparable<HudShader> {
     companion object {
         private val comparator = Comparator.comparing { s: HudShader ->
@@ -50,6 +58,12 @@ data class HudShader(
             s.clipInner
         }.thenComparingDouble { s: HudShader ->
             s.clipOuter
+        }.thenComparing { s: HudShader ->
+            s.hasClipOrigin
+        }.thenComparingDouble { s: HudShader ->
+            s.clipOriginX
+        }.thenComparingDouble { s: HudShader ->
+            s.clipOriginY
         }
     }
 

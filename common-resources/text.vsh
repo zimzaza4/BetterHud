@@ -1,5 +1,16 @@
 #version 330
 
+// 26.2 stages every GUI draw in one shared vertex buffer and issues each of them with a
+// baseVertex offset, so gl_VertexID is no longer the index inside the draw: extra HUD
+// geometry (item durability bar, hotbar cooldown overlay) shifts it and changes which
+// corner every glyph vertex is taken to be. gl_BaseVertexARB is not an option either -
+// Iris and other GLSL parsers reject the ARB-suffixed builtin.
+//
+// 26.2 textures every glyph with a 0.01 inset (FontTexture.add), so the fractional part
+// of UV0 * 256 is ~0.01 on the left/top vertex of the quad and ~0.99 on the right/bottom
+// one. That identifies the corner with no vertex index and no extension at all, on every
+// backend. Older versions keep the plain gl_VertexID % 4 mapping.
+
 #CreateConstant
 
 #if !defined(IS_GUI) && !defined(IS_SEE_THROUGH)
@@ -83,6 +94,10 @@ void main() {
     bool bhRotateOffset = false;   // rotate the payload offset together with the element
     float bhClipIn = 0.0;
     float bhClipOut = 0.0;
+    bool bhClipHasOrigin = false;
+    vec2 bhClipOrigin = vec2(0.0);
+    float bhAnchorX = 0.0;
+    float bhAnchorY = 0.0;
     bhClip = vec4(0.0);
     if (pos.y >= ui.y && ProjMat[3].x == -1) {
         int bit = int(pos.y) >> HEIGHT_BIT;
@@ -166,14 +181,24 @@ void main() {
                 float(((bhGy & 15) << 8) + bhBz) - 2048.0
             );
         } else if (bhPayload == 3) {
-            bhRot = vertexColor.x * 6.283185307;
-            bhOfs = vec2(vertexColor.y * 255.0 - 128.0, vertexColor.z * 255.0 - 128.0);
+            // R = angle (8 bit); G/B = the two axes (8 bit each, +-128). Read the raw Color
+            // attribute: the case multiplied vertexColor by the element opacity, which would
+            // scale these bytes. A fourth byte is not available - Minecraft takes the text
+            // vertex alpha from the caller, not from the component colour (Font.prepareText).
+            bhRot = Color.x * 6.283185307;
+            bhOfs = vec2(Color.y * 255.0 - 128.0, Color.z * 255.0 - 128.0);
         }
         if (bhPayload > 0) {
+            // The payload owns the colour bytes; draw the glyph plain white, keeping the alpha.
             vertexColor = vec4(1.0, 1.0, 1.0, vertexColor.w);
         }
+#if SHADER_VERSION >= 3
+        // corner from the glyph texture inset (see the note at the top of this file)
+        vec2 bhCs = sign(vec2(fract(UV0.x * 256.0) - 0.5, fract(UV0.y * 256.0) - 0.5));
+#else
         float bhCi = float(gl_VertexID % 4);
         vec2 bhCs = vec2((bhCi == 2.0 || bhCi == 3.0) ? 1.0 : -1.0, (bhCi == 1.0 || bhCi == 2.0) ? 1.0 : -1.0);
+#endif
         vec2 bhPivot = pos.xy - bhCs * bhRotHalf;
         float bhCa = cos(bhRot);
         float bhSa = sin(bhRot);
@@ -182,7 +207,8 @@ void main() {
         }
         vec2 bhD = pos.xy - bhPivot;
         pos.xy = bhPivot + vec2(bhCa * bhD.x - bhSa * bhD.y, bhSa * bhD.x + bhCa * bhD.y) + bhOfs;
-        bhClip = vec4(pos.xy - bhPivot, bhClipIn, bhClipOut);
+        vec2 bhClipC = bhClipHasOrigin ? bhClipOrigin : bhPivot;
+        bhClip = vec4(pos.xy - bhClipC, bhClipIn, bhClipOut);
     }
 #if !defined(IS_GUI) && !defined(IS_SEE_THROUGH)
     vertexColor *= sample_lightmap(Sampler2, UV2);
