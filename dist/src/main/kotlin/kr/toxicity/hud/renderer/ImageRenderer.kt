@@ -75,7 +75,10 @@ class ImageRenderer(
                             (positionXGetter?.value(target) as? Number)?.toInt() ?: 0,
                             (positionYGetter?.value(target) as? Number)?.toInt() ?: 0
                         )
-                    } else base.applyColor(colorApply(target))
+                    } else {
+                        // applyColor is copy-based now: use its result, an in-place call would be a no-op.
+                        base applyColor colorApply(target)
+                    }
                 }
             } else {
                 if (clearListener) listen.clear(player)

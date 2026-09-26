@@ -213,9 +213,11 @@ fun Component.split(option: SplitOption, charWidth: (Pair<Style, Int>) -> Int?):
     return list
 }
 
-infix fun PixelComponent.applyColor(color: TextColor?): PixelComponent = if (color == null) this else apply {
-    component applyColor color
-}
+infix fun PixelComponent.applyColor(color: TextColor?): PixelComponent =
+    // WidthComponent.applyColor is copy-based (it returns a new WidthComponent), so the result
+    // must be wrapped into a new PixelComponent: PixelComponent.component is a final record field,
+    // an in-place write is impossible. Dropping the result silently made every image colour-op a no-op.
+    if (color == null) this else PixelComponent(component applyColor color, pixel)
 
 /**
  * Replaces this component's colour with a rotation payload.
