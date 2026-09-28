@@ -24,6 +24,7 @@ import kr.toxicity.hud.renderer.ImageRenderer
 import kr.toxicity.hud.renderer.HudRenderer
 import kr.toxicity.hud.renderer.TextRenderer
 import kr.toxicity.hud.shader.HudShader
+import kr.toxicity.hud.shader.Rotation
 import kr.toxicity.hud.text.BackgroundKey
 import kr.toxicity.hud.text.HudTextData
 import kr.toxicity.hud.util.*
@@ -104,13 +105,27 @@ class PopupLayout(
 
         val image = layout.image.map { target ->
             val pixel = elementPixel + pair.pixel + target.location
+            val rotation = target.rotation
+            val rotationScale = target.scale * target.source.scale
+            val rotationSize = target.source.image.firstOrNull()?.image?.image
             val imageShader = HudShader(
                 elementGui,
                 target.renderScale + pair.pixel + target.location,
                 target.layer,
                 target.outline,
                 pixel.opacity,
-                target.property
+                target.property,
+                rotation.bakedDegree,
+                rotation is Rotation.Dynamic,
+                target.positionX != null || target.positionY != null,
+                (rotationSize?.width ?: 0).toDouble() * rotationScale / 2.0,
+                (rotationSize?.height ?: 0).toDouble() * rotationScale / 2.0,
+                target.positionInRotatedSpace,
+                target.clipInner,
+                target.clipOuter,
+                target.clipOriginX ?: 0.0,
+                target.clipOriginY ?: 0.0,
+                target.clipOriginX != null && target.clipOriginY != null
             )
             val negativeSpace = parent.getOrCreateSpace(-1)
 
