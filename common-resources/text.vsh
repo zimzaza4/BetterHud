@@ -123,9 +123,12 @@ void main() {
             bool outline = false;
             int property = 0;
 
-            switch (id) {
-                #CreateLayout
-            }
+            // The cases come as a tree of `if (id <= ...)` instead of a switch: some drivers lower a
+            // switch into an if/else chain nested once per case and refuse more than 64 levels, which a
+            // pack of about 62 elements reaches. A copy of this file edited by hand predates the define
+            // and keeps its own switch - the cases then come as `case` labels (the #else branch below).
+            #define BH_FLAT_LAYOUT
+            #CreateLayout
 
 #if SHADER_VERSION < 1
             vertexColor = (checkElement(pos.z) && !outline) ? vec4(0) : Color * vec4(1, 1, 1, opacity);

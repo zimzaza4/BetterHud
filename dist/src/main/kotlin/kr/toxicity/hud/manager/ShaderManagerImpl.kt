@@ -9,6 +9,7 @@ import kr.toxicity.hud.pack.PackOverlay
 import kr.toxicity.hud.resource.GlobalResource
 import kr.toxicity.hud.shader.HudShader
 import kr.toxicity.hud.shader.PayloadKind
+import kr.toxicity.hud.shader.ShaderDispatch
 import kr.toxicity.hud.util.*
 import net.kyori.adventure.bossbar.BossBar
 import java.awt.image.BufferedImage
@@ -140,63 +141,64 @@ object ShaderManagerImpl : BetterHudManager, ShaderManager {
     private var pendingResource: GlobalResource? = null
 
     private fun compileShader(resource: GlobalResource) {
-        compiledLayout = hudShaders.entries.foldIndexed(arrayListOf()) { index, arr, entry ->
+        // The id of an element is its index here, and the very same id goes into the ascent of its glyphs.
+        val bodies = hudShaders.entries.mapIndexed { index, entry ->
             val shader = entry.key
             val id = index + 1
-            arr.add("case ${id}:")
+            val body = arrayListOf<String>()
             // The element's own position (animation offset + element pixel offset), emitted unconditionally.
             // NOTE: nothing reads bhAnchorX/Y yet - the shader derives the pivot from the glyph center (text.vsh).
-            arr.add("    bhAnchorX = ${shader.renderScale.relativeOffset.x.toDouble()};")
-            arr.add("    bhAnchorY = ${shader.renderScale.relativeOffset.y.toDouble()};")
-            if (shader.property > 0) arr.add("    property = ${shader.property};")
-            if (shader.opacity < 1.0) arr.add("    opacity = ${shader.opacity.toFloat()};")
+            body.add("    bhAnchorX = ${shader.renderScale.relativeOffset.x.toDouble()};")
+            body.add("    bhAnchorY = ${shader.renderScale.relativeOffset.y.toDouble()};")
+            if (shader.property > 0) body.add("    property = ${shader.property};")
+            if (shader.opacity < 1.0) body.add("    opacity = ${shader.opacity.toFloat()};")
             val static = shader.renderScale.scale.staticScale
             fun applyScale(offset: Int, scale: Double, pos: String) {
                 if (scale != 1.0 || static) {
                     val scaleFloat = scale.toFloat()
-                    arr.add("    pos.$pos = (pos.$pos - (${offset})) * ${if (static) "$scaleFloat * uiScreen.$pos" else scaleFloat} + (${offset});")
+                    body.add("    pos.$pos = (pos.$pos - (${offset})) * ${if (static) "$scaleFloat * uiScreen.$pos" else scaleFloat} + (${offset});")
                 }
             }
             applyScale(shader.renderScale.relativeOffset.x, shader.renderScale.scale.x, "x")
             applyScale(shader.renderScale.relativeOffset.y, shader.renderScale.scale.y, "y")
-            if (shader.gui.x != 0.0) arr.add("    xGui = ui.x * ${shader.gui.x.toFloat()} / 100.0;")
-            if (shader.gui.y != 0.0) arr.add("    yGui = ui.y * ${shader.gui.y.toFloat()} / 100.0;")
-            if (shader.layer != 0) arr.add("    layer = ${shader.layer};")
-            if (shader.outline != 0) arr.add("    outline = true;")
+            if (shader.gui.x != 0.0) body.add("    xGui = ui.x * ${shader.gui.x.toFloat()} / 100.0;")
+            if (shader.gui.y != 0.0) body.add("    yGui = ui.y * ${shader.gui.y.toFloat()} / 100.0;")
+            if (shader.layer != 0) body.add("    layer = ${shader.layer};")
+            if (shader.outline != 0) body.add("    outline = true;")
             val payload = PayloadKind.of(shader.rotationDynamic, shader.positionDynamic)
             if (payload > 0 || shader.rotationDegree != 0.0 || shader.clipOuter > 0.0) {
-                arr.add("    bhRotOn = true;")
-                arr.add("    bhRot = ${Math.toRadians(shader.rotationDegree).toFloat()};")
-                arr.add("    bhRotHalf = vec2(${shader.rotationHalfX.toFloat()}, ${shader.rotationHalfY.toFloat()});")
+                body.add("    bhRotOn = true;")
+                body.add("    bhRot = ${Math.toRadians(shader.rotationDegree).toFloat()};")
+                body.add("    bhRotHalf = vec2(${shader.rotationHalfX.toFloat()}, ${shader.rotationHalfY.toFloat()});")
                 // A glyph of a cut image only covers a piece of the element: move the pivot from the
                 // piece's own center to the element's one, so every piece turns around the same point.
                 // Guarded, so a hand-edited text.vsh which predates the anchor still compiles.
                 if (shader.rotationAnchorX != 0.0 || shader.rotationAnchorY != 0.0) {
-                    arr.add("#ifdef BH_ROT_ANCHOR")
-                    arr.add("    bhRotAnchor = vec2(${shader.rotationAnchorX.toFloat()}, ${shader.rotationAnchorY.toFloat()});")
-                    arr.add("#endif")
+                    body.add("#ifdef BH_ROT_ANCHOR")
+                    body.add("    bhRotAnchor = vec2(${shader.rotationAnchorX.toFloat()}, ${shader.rotationAnchorY.toFloat()});")
+                    body.add("#endif")
                 }
-                arr.add("    bhPayload = $payload;")
+                body.add("    bhPayload = $payload;")
                 // Rotate the payload offset together with the element (see HudLayout.positionInRotatedSpace).
                 // The uniform was named bhOfsMapSpace while the name leaked from a minimap use case.
-                arr.add("    bhRotateOffset = ${shader.positionInRotatedSpace};")
+                body.add("    bhRotateOffset = ${shader.positionInRotatedSpace};")
                 if (shader.clipOuter > 0.0) {
-                    arr.add("    bhClipIn = ${shader.clipInner.toFloat()};")
-                    arr.add("    bhClipOut = ${shader.clipOuter.toFloat()};")
+                    body.add("    bhClipIn = ${shader.clipInner.toFloat()};")
+                    body.add("    bhClipOut = ${shader.clipOuter.toFloat()};")
                     // Only emit these two lines when a clip-origin was given explicitly; every other element
                     // keeps byte-for-byte the behaviour it had before.
                     if (shader.hasClipOrigin) {
-                        arr.add("    bhClipHasOrigin = true;")
-                        arr.add("    bhClipOrigin = vec2(${shader.clipOriginX.toFloat()}, ${shader.clipOriginY.toFloat()});")
+                        body.add("    bhClipHasOrigin = true;")
+                        body.add("    bhClipOrigin = vec2(${shader.clipOriginX.toFloat()}, ${shader.clipOriginY.toFloat()});")
                     }
                 }
             }
-            arr.add("    break;")
             entry.value.forEach {
                 it(id)
             }
-            arr
+            body
         }
+        compiledLayout = ShaderDispatch.lines(bodies)
         for (overlay in PackOverlay.entries) {
             loadShaders(overlay).forEach { (key, byte) ->
                 val path = resource.core + key
