@@ -54,9 +54,7 @@ class HudImageParser(parent: HudImpl, private val imageLayout: ImageLayout, gui:
                 val height = (pair.image.image.height.toDouble() * imageLayout.scale * scale).roundToInt()
                 val scale = height.toDouble() / pair.image.image.height
                 val ascent = finalPixel.y.coerceAtLeast(-HUD_ADD_HEIGHT).coerceAtMost(HUD_ADD_HEIGHT)
-                // An image bigger than the font atlas is cut into tiles which are drawn one by one:
-                // every tile brings its own ascent (the y of the picture) and its own padding spaces
-                // (the x of it), so the whole picture still lands on a single rectangle.
+                // An image bigger than the font atlas is cut into tiles which are drawn one by one.
                 val tiles = pair.tiles?.takeIf { height > 0 }?.place(height)
                 val component = image(imageLayout.identifier(shader, ascent, fileName)) {
                     if (tiles != null) tiles.toWidthComponent(

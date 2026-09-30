@@ -28,13 +28,11 @@ data class HudShader(
     val clipOriginX: Double = 0.0,
     val clipOriginY: Double = 0.0,
     val hasClipOrigin: Boolean = false,
-    // Offset from the centre of the glyph to the centre the element turns (and clips) around.
-    // It is zero for every element drawn as one glyph; a cut image turns that glyph into several
-    // tiles, and each of them has to carry the offset from its own centre to the element's one,
-    // or the pieces would rotate around different points and tear apart.
-    // Both must stay in the compareTo chain: HudShader is the key of the TreeMap that assigns case
-    // ids, so two tiles differing only in the anchor would collapse into one key and one of them
-    // would turn around the other one's centre.
+    // Offset from the center of this glyph to the center the element turns (and clips) around. Zero for
+    // an element drawn as one glyph; every tile of a cut image carries its own, or the pieces would
+    // rotate around different points.
+    // Both must stay in the compareTo chain: HudShader is the key of the TreeMap that assigns case ids,
+    // so two tiles differing only in the anchor would collapse into one key and share a case body.
     val rotationAnchorX: Double = 0.0,
     val rotationAnchorY: Double = 0.0,
 ) : Comparable<HudShader> {

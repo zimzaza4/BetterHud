@@ -90,11 +90,11 @@ void main() {
     bool bhRotOn = false;
     float bhRot = 0.0;
     vec2 bhRotHalf = vec2(0.0);
-    // Offset from the centre of this glyph to the point the element turns around. Zero for a glyph
-    // which covers the whole element; a cut image is drawn as several glyphs, and each of them gets
-    // the offset from its own centre to the element's one so that the pieces do not tear apart.
-    // The define lets a case body assign it: a hand-edited copy of this file which predates it simply
-    // compiles the assignment out instead of failing to compile the whole shader.
+    // Offset from the centre of this glyph to the point the element turns around: zero for a glyph
+    // covering the whole element, the offset to the element's centre for a tile of a cut image, so
+    // that the pieces do not turn around different points.
+    // The define lets a case body assign it - a hand-edited copy of this file which predates it
+    // compiles the assignment out instead of failing.
     #define BH_ROT_ANCHOR
     vec2 bhRotAnchor = vec2(0.0);
     int bhPayload = 0;

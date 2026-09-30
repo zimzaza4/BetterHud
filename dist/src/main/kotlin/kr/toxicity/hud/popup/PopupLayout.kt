@@ -139,8 +139,7 @@ class PopupLayout(
                     val scale = height.toDouble() / it.image.image.height
                     val xOffset = (it.image.xOffset * scale).roundToInt()
                     val ascent = pixel.y
-                    // Same as a hud image: too big for the font atlas means cut into tiles which
-                    // are put back together with their own ascents and padding spaces.
+                    // An image bigger than the font atlas is cut into tiles which are drawn one by one.
                     val tiles = it.tiles?.takeIf { height > 0 }?.place(height)
                     val component = image(target.identifier(imageShader, ascent, fileName)) {
                         if (tiles != null) tiles.toWidthComponent(

@@ -14,10 +14,8 @@ import kotlin.math.ceil
 import kotlin.math.roundToInt
 
 /**
- * One piece of an image, cut small enough to be uploaded as a single bitmap font glyph.
- *
- * @param name texture file name (with its extension) inside the generated resource pack
- * @param image the pixels of this piece, always [ImageTiles.tileWidth] x [ImageTiles.tileHeight]
+ * One piece of an image, cut small enough to be uploaded as a single bitmap font glyph: [name] is its
+ * file name inside the pack, [image] its pixels, always [ImageTiles.tileWidth] x [ImageTiles.tileHeight].
  */
 class ImageTile(
     val name: String,
@@ -25,51 +23,27 @@ class ImageTile(
 )
 
 /**
- * An image which had to be cut because one bitmap font glyph cannot be bigger than [ATLAS_SIZE].
+ * An image which had to be cut because one bitmap font glyph cannot be bigger than [ATLAS_SIZE]: the
+ * 256x256 sheet the client stitches a bitmap font into refuses a cell which does not fit, and the
+ * provider is then dropped without an error on either side.
  *
- * Every glyph of a bitmap provider is uploaded as one cell of a 256x256 font sheet
- * (`net.minecraft.client.gui.font.FontTexture`), and the quadtree of that sheet
- * (`FontTexture.Node.insert`) refuses a cell which does not fit. The provider then bails out and the
- * client draws the missing-glyph box instead: that is why an image wider or taller than 256 pixels
- * silently disappears.
- *
- * The cut is a **uniform grid**: every tile is exactly [tileWidth] x [tileHeight], the tiles at the
- * right and bottom edge being padded with transparency, and the size is picked so that a tile never
- * exceeds the atlas.
- *
- * The grid matters for two reasons. A bitmap glyph is scaled by `json height / cell height`, so a
- * tile which is shorter than its neighbours would be drawn at a slightly different scale - the grid
- * keeps every tile on one scale. And the tiles of a cut image are put back together by the caller
- * with space glyphs, which only stay in line as long as they all share the same width.
+ * Every tile is padded to exactly [tileWidth] x [tileHeight], or the pieces would not line up.
  */
 class ImageTiles(
-    /** Tiles in row-major order; every one of them is [tileWidth] x [tileHeight]. */
     val tiles: List<ImageTile>,
     val columns: Int,
     val rows: Int,
     val tileWidth: Int,
     val tileHeight: Int,
-    /** Size of the image which was cut. */
     val sourceWidth: Int,
     val sourceHeight: Int
 ) {
     operator fun get(column: Int, row: Int): ImageTile = tiles[row * columns + column]
 
-    /**
-     * Computes where every tile lands when the whole image is drawn [displayHeight] gui pixels tall.
-     *
-     * The client scales a tile by its own JSON height over its cell height, so the display size of a
-     * tile follows that same factor - the layout never assumes a scale the client is not going to use.
-     */
     fun place(displayHeight: Int): TiledImageLayout {
         val tileDisplayHeight = (tileHeight * (displayHeight.toDouble() / sourceHeight)).roundToInt()
         val factor = tileDisplayHeight.toDouble() / tileHeight
-        // One boundary per column, computed on its own so the columns cannot drift apart.
-        //
-        // `of` picks the tile width to be a multiple of the tile height, so `tileWidth * factor` - the
-        // width the client draws a tile at - is `(tileWidth / tileHeight) * tileDisplayHeight`, a whole
-        // number of pixels at every scale. The boundary below therefore lands exactly on the tile's own
-        // right edge and neighbouring tiles touch instead of leaving a hairline gap.
+        // One boundary per column, from the row's origin, so a fraction of a pixel cannot accumulate.
         fun boundary(column: Int) = (column * tileWidth * factor).roundToInt()
         val gridWidth = boundary(columns)
         return TiledImageLayout(
@@ -87,8 +61,8 @@ class ImageTiles(
             },
             columns,
             rows,
-            // What the untouched image would have been drawn at. The grid can be wider because the
-            // last column is padded to a whole tile; the caller trims that back off.
+            // What the untouched image would have been drawn at: the grid can be wider, because the
+            // last column is padded to a whole tile.
             (sourceWidth * factor).roundToInt(),
             rows * tileDisplayHeight,
             gridWidth
@@ -103,31 +77,18 @@ class ImageTiles(
         const val ATLAS_SIZE = 256
 
         /**
-         * Cuts [image] into a grid of tiles of at most [ATLAS_SIZE] pixels, or returns null when the
-         * image already fits into a single glyph.
-         *
-         * Nothing is cut in that case - the caller keeps its own file name and its own font entry - so
-         * the pack of an image which never hit the limit stays byte for byte what it was.
-         *
-         * @param name file name of a tile, called only when the image is actually cut
+         * Cuts [image] into tiles of at most [ATLAS_SIZE] pixels, or returns null when the image fits
+         * into a single glyph - such an image keeps its own file name and font entry, so the pack of an
+         * image which never hit the limit stays unchanged. [name] is only called when it is cut.
          */
         fun of(image: BufferedImage, name: (column: Int, row: Int) -> String): ImageTiles? {
             val rows = ceil(image.height.toDouble() / ATLAS_SIZE).toInt().coerceAtLeast(1)
             val tileHeight = ceil(image.height.toDouble() / rows).toInt()
             val gridColumns = ceil(image.width.toDouble() / ATLAS_SIZE).toInt().coerceAtLeast(1)
             if (gridColumns == 1 && rows == 1) return null
-            // The client draws a tile `tileWidth * jsonHeight / cellHeight` pixels wide, and the text
-            // cursor which puts the tiles next to each other can only move by whole pixels.
-            //
-            // So unless that product is a whole number the two disagree by a fraction of a pixel on
-            // every column boundary, and the gap shows as a hairline seam (vanilla has the same
-            // rounding between any two glyphs, but a seam *inside* one picture is much easier to see).
-            // Making the tile width a multiple of the cell height fixes it for every height, i.e. for
-            // every scale: the width becomes `(tileWidth / tileHeight) * jsonHeight`, always whole.
-            //
-            // The price is transparent padding on the right of the last column. It is only texture
-            // space: the caller trims it off the component's width, so the element still reports the
-            // size the untouched image would have had.
+            // The client draws a tile `tileWidth * jsonHeight / cellHeight` pixels wide, while the
+            // cursor which lays them out only moves by whole pixels: a multiple of the height keeps that
+            // product whole at every scale, so the tiles touch instead of leaving a hairline seam.
             val tileWidth = if (gridColumns == 1) image.width
             else (ATLAS_SIZE / tileHeight).coerceAtLeast(1) * tileHeight
             val columns = ceil(image.width.toDouble() / tileWidth).toInt().coerceAtLeast(1)
@@ -153,61 +114,33 @@ class ImageTiles(
 
 /**
  * Where every tile of an [ImageTiles] goes, in gui pixels, relative to the origin of the whole image.
- *
- * The origin is the top-left corner the untouched image would have used: the y of a tile is what the
- * caller adds to the glyph's ascent, and the x is what the spaces around the glyph have to add up to.
  */
 class TiledImageLayout(
-    /** Tiles in row-major order. */
     val tiles: List<PlacedTile>,
     val columns: Int,
     val rows: Int,
-    /** Display width of the whole image, close to what the untouched one would have reported. */
     val width: Int,
-    /** Display height of the whole image, the padding of the last row included. */
     val height: Int,
-    /**
-     * Display width of the whole grid, transparent padding of the last column included.
-     *
-     * It is what a row actually advances, so it is what the row rewind has to undo. [width] can be
-     * smaller: the caller trims the difference off with one more space, so the element still reports
-     * the size of the untouched image.
-     */
+    /** Display width of the whole grid, padding included - what a row advances and its rewind undoes. */
     val gridWidth: Int
 ) {
     fun get(column: Int, row: Int): PlacedTile = tiles[row * columns + column]
 
     class PlacedTile(
-        /** Texture file name of this piece. */
         val name: String,
-        /** Display x of the left edge, relative to the image origin. */
         val x: Int,
-        /** Display y of the top edge, relative to the image origin; add it to the glyph's ascent. */
         val y: Int,
         val width: Int,
         val height: Int,
-        /**
-         * The advance the vanilla bitmap provider derives from this piece
-         * (`BitmapProvider.Definition.getActualGlyphWidth`): the last column which contains anything,
-         * scaled and truncated the same way. It is shorter than [width] as soon as the piece ends with
-         * transparency, so the caller has to pad it back with a space glyph.
-         */
+        /** What `BitmapProvider` derives from this piece; shorter than [width] when it ends with transparency. */
         val advance: Int
     ) {
-        /** Space glyph which makes this piece occupy exactly [width] pixels. */
         val padding: Int get() = width - advance
 
         fun centerX() = x + width / 2.0
         fun centerY() = y + height / 2.0
     }
 
-    /**
-     * The shader [tile] is drawn with.
-     *
-     * A rotated (or clipped) element pivots around its own centre, and a single tile cannot know where
-     * that is: such a tile gets a shader of its own whose pivot is the centre of the whole image, or
-     * the pieces would turn - and clip - around different points and tear apart.
-     */
     fun shaderOf(shader: HudShader, tile: PlacedTile): HudShader = if (shader.pivotsAroundElementCenter) {
         shader.copy(
             rotationHalfX = tile.width / 2.0,
@@ -218,12 +151,8 @@ class TiledImageLayout(
     } else shader
 
     /**
-     * Emits the bitmap font provider of every tile into [array] and returns the width component which
-     * draws them as one image.
-     *
-     * A tile keeps its own ascent - that is the y of the picture - and the space glyphs around it are
-     * the x of it: the vanilla provider derives the advance of a glyph from its last column which
-     * contains anything, so a tile ending with transparency is padded back to its own width.
+     * Emits the bitmap provider of every tile into [array] and returns the component drawing them as one
+     * image: a tile's ascent is the y of the picture, the spaces around it the x of it.
      */
     fun toWidthComponent(
         shader: HudShader,
@@ -259,19 +188,16 @@ class TiledImageLayout(
             // Every row is drawn from the left edge of the image: undo what the row advanced.
             if (row != rows - 1) content.append(space(-gridWidth))
         }
-        // ... and drop the transparent padding of the last column, so the element is exactly as wide
-        // as the untouched image would have been (which is what the layout, the clip and a rotation
-        // pivot are measured against).
+        // Drop the padding of the last column: the element has to be as wide as the untouched image,
+        // which is what the layout, the clip and a rotation pivot are measured against.
         if (gridWidth != width) content.append(space(width - gridWidth))
         return WidthComponent(builder.content(content.toString()), width)
     }
 }
 
 /**
- * Copies [this] piece into the top-left corner of an empty tile of the wanted size.
- *
- * The client scales a glyph by its cell's size, so the pieces at the right and bottom edge of an image
- * have to be padded to the size of the others or they would be drawn on a different scale.
+ * Copies [this] piece into the top-left corner of an empty tile of the wanted size; the pieces at the
+ * edge have to be padded there, or the client draws them at another scale.
  */
 private fun BufferedImage.padded(width: Int, height: Int): BufferedImage {
     val target = BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB)
@@ -282,12 +208,8 @@ private fun BufferedImage.padded(width: Int, height: Int): BufferedImage {
 }
 
 /**
- * The advance the vanilla bitmap provider derives for a glyph covering all of [this] tile.
- *
- * `BitmapProvider.Definition.load` scans the cell from its last column and keeps the first one which
- * has any alpha, then stores `(int)(0.5 + width * height / cellHeight) + 1` as the advance. The cell
- * here is the whole tile, so this has to be mirrored exactly - a pixel too much or too little would
- * shift every following tile.
+ * The advance `BitmapProvider` derives for a glyph covering all of [this] tile: `(int)(0.5 + actual *
+ * height / cellHeight) + 1`, where `actual` is the last column with any alpha.
  */
 private fun BufferedImage.glyphAdvance(displayHeight: Int): Int {
     val alpha = alphaRaster

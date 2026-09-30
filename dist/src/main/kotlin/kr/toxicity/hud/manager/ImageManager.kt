@@ -66,8 +66,7 @@ object ImageManager : BetterHudManager {
                             image.image.image.toByteArray()
                         }
                     } else {
-                        // The whole image exceeds the font atlas: only the tiles are drawn, so only
-                        // they have to be shipped.
+                        // Only the tiles are drawn, so only they have to be shipped.
                         tiles.tiles.forEach { tile ->
                             PackGenerator.addTask(resource.textures + tile.name) {
                                 tile.image.toByteArray()
