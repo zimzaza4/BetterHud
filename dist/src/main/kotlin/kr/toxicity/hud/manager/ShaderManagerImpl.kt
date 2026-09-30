@@ -168,6 +168,14 @@ object ShaderManagerImpl : BetterHudManager, ShaderManager {
                 arr.add("    bhRotOn = true;")
                 arr.add("    bhRot = ${Math.toRadians(shader.rotationDegree).toFloat()};")
                 arr.add("    bhRotHalf = vec2(${shader.rotationHalfX.toFloat()}, ${shader.rotationHalfY.toFloat()});")
+                // A glyph of a cut image only covers a piece of the element: move the pivot from the
+                // piece's own center to the element's one, so every piece turns around the same point.
+                // Guarded, so a hand-edited text.vsh which predates the anchor still compiles.
+                if (shader.rotationAnchorX != 0.0 || shader.rotationAnchorY != 0.0) {
+                    arr.add("#ifdef BH_ROT_ANCHOR")
+                    arr.add("    bhRotAnchor = vec2(${shader.rotationAnchorX.toFloat()}, ${shader.rotationAnchorY.toFloat()});")
+                    arr.add("#endif")
+                }
                 arr.add("    bhPayload = $payload;")
                 // Rotate the payload offset together with the element (see HudLayout.positionInRotatedSpace).
                 // The uniform was named bhOfsMapSpace while the name leaked from a minimap use case.

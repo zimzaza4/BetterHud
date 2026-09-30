@@ -54,26 +54,37 @@ class HudImageParser(parent: HudImpl, private val imageLayout: ImageLayout, gui:
                 val height = (pair.image.image.height.toDouble() * imageLayout.scale * scale).roundToInt()
                 val scale = height.toDouble() / pair.image.image.height
                 val ascent = finalPixel.y.coerceAtLeast(-HUD_ADD_HEIGHT).coerceAtMost(HUD_ADD_HEIGHT)
+                // An image bigger than the font atlas is cut into tiles which are drawn one by one.
+                val tiles = pair.tiles?.takeIf { height > 0 }?.place(height)
                 val component = image(imageLayout.identifier(shader, ascent, fileName)) {
-                    val c = parent.newChar
-                    val comp = Component.text()
-                        .font(parent.imageKey)
-                    val finalWidth = WidthComponent(
-                        comp.content("$c$negativeSpace"),
-                        (pair.image.image.width.toDouble() * scale).roundToInt()
-                    )
-                    parent.jsonArray?.let { array ->
-                        createAscent(shader, ascent) { y ->
-                            array += jsonObjectOf(
-                                "type" to "bitmap",
-                                "file" to fileName,
-                                "ascent" to y,
-                                "height" to height,
-                                "chars" to jsonArrayOf(c)
-                            )
+                    if (tiles != null) tiles.toWidthComponent(
+                        shader,
+                        parent.imageKey,
+                        parent.jsonArray,
+                        ascent,
+                        { parent.newChar },
+                        parent::getOrCreateSpace
+                    ) else {
+                        val c = parent.newChar
+                        val comp = Component.text()
+                            .font(parent.imageKey)
+                        val finalWidth = WidthComponent(
+                            comp.content("$c$negativeSpace"),
+                            (pair.image.image.width.toDouble() * scale).roundToInt()
+                        )
+                        parent.jsonArray?.let { array ->
+                            createAscent(shader, ascent) { y ->
+                                array += jsonObjectOf(
+                                    "type" to "bitmap",
+                                    "file" to fileName,
+                                    "ascent" to y,
+                                    "height" to height,
+                                    "chars" to jsonArrayOf(c)
+                                )
+                            }
                         }
+                        finalWidth
                     }
-                    finalWidth
                 }
 
                 list.add(component.toPixelComponent(finalPixel.x + (pair.image.xOffset * scale).roundToInt()))
