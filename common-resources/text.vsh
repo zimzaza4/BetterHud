@@ -123,12 +123,10 @@ void main() {
             bool outline = false;
             int property = 0;
 
-            // The element cases are emitted as a balanced tree of `if (id <= ...)` instead of a switch:
-            // a driver may lower a switch into an if/else chain nested once per case, and one of them
-            // refuses a chain deeper than 64 - a pack of ~62 elements then fails to link as a whole and
-            // the client drops every resource pack. See ShaderDispatch on the plugin side.
-            // A copy of this file which was edited by hand predates the define: it keeps its own switch,
-            // and the cases are emitted as `case` labels for it instead (the #else branch below).
+            // The cases come as a tree of `if (id <= ...)` instead of a switch: some drivers lower a
+            // switch into an if/else chain nested once per case and refuse more than 64 levels, which a
+            // pack of about 62 elements reaches. A copy of this file edited by hand predates the define
+            // and keeps its own switch - the cases then come as `case` labels (the #else branch below).
             #define BH_FLAT_LAYOUT
             #CreateLayout
 

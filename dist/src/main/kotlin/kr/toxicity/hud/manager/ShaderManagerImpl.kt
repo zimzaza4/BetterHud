@@ -141,10 +141,7 @@ object ShaderManagerImpl : BetterHudManager, ShaderManager {
     private var pendingResource: GlobalResource? = null
 
     private fun compileShader(resource: GlobalResource) {
-        // The bodies are only laid out afterwards (see ShaderDispatch) because the dispatch is emitted
-        // in two forms. The id of an element is its index here, and it is the very same id that is
-        // encoded into the ascent of every one of its glyphs, so the order of the tree map - and the
-        // call of every registered consumer - must not change.
+        // The id of an element is its index here, and the very same id goes into the ascent of its glyphs.
         val bodies = hudShaders.entries.mapIndexed { index, entry ->
             val shader = entry.key
             val id = index + 1

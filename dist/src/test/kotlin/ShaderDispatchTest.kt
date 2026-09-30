@@ -8,11 +8,6 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/**
- * The dispatch of `text.vsh` has to stay flat: NVIDIA's Cg frontend lowers a `switch` into an if/else
- * chain nested once per case and refuses more than 64 levels, so before this the whole text pipeline
- * failed to link for any pack of ~62 elements or more (and the client then drops every resource pack).
- */
 class ShaderDispatchTest {
 
     private fun bodies(count: Int) = (1..count).map { listOf("body$it;") }
@@ -59,9 +54,7 @@ class ShaderDispatchTest {
         assertEquals("#ifdef ${ShaderDispatch.MARKER}", lines.first())
         assertEquals("#endif", lines.last())
         assertTrue(lines.contains("#else"))
-        // the flat form must not contain a single case label: the bundled shader has no switch
         assertFalse(flat(lines).any { it.startsWith("case ") })
-        // ... while the fallback form is nothing but case labels
         assertEquals(3, chained(lines).count { it.startsWith("case ") })
         assertEquals(3, chained(lines).count { it == "    break;" })
     }
@@ -85,7 +78,7 @@ class ShaderDispatchTest {
 
     @Test
     fun testShapeOfTheTree() {
-        // what three elements look like: one guard, then one `if` per halving until a range holds one id
+        // one guard, then one `if` per halving, until a range holds a single id
         assertEquals(
             listOf(
                 "#ifdef BH_FLAT_LAYOUT",
@@ -118,7 +111,7 @@ class ShaderDispatchTest {
 
     @Test
     fun testFlatDepthIsLogarithmic() {
-        // 1 guard + one level per halving: ceil(log2(n)) instead of n
+        // one level per halving: ceil(log2(n)) instead of n
         (1..255).forEach { count ->
             val expected = if (count == 1) 1 else 1 + ceil(log2(count.toDouble())).toInt()
             assertEquals(expected, depth(flat(ShaderDispatch.lines(bodies(count)))), "depth at $count elements")
@@ -127,7 +120,7 @@ class ShaderDispatchTest {
 
     @Test
     fun testFlatDepthStaysFarBelowTheDriverLimit() {
-        // the two `if`s above the dispatch (the screen-bottom test and the id marker) are not part of it
+        // the two `if`s above the dispatch are not part of it
         (1..255).forEach { count ->
             assertTrue(
                 depth(flat(ShaderDispatch.lines(bodies(count)))) + 2 <= 12,
@@ -138,10 +131,7 @@ class ShaderDispatchTest {
 
     @Test
     fun testTheSwitchFormIsWhatTheDriverChains() {
-        // The source of the switch form has no `if` of its own - the nesting comes from the driver,
-        // which lowers every case into one more level of if/else. Measured on a real client: a pack of
-        // 68 elements produced 70 nested ifs in the driver's assembly dump, and its frontend refused
-        // the program when it reached level 65.
+        // the nesting of the switch form comes from the driver, not from the emitted source
         val lines = chained(ShaderDispatch.lines(bodies(68)))
         assertEquals(0, depth(lines))
         assertEquals(68, lines.count { it.startsWith("case ") })
@@ -157,9 +147,7 @@ class ShaderDispatchTest {
 
     @Test
     fun testBundledShaderMatchesTheDispatch() {
-        // The two halves of the trick live in different modules: the generator emits both forms, and the
-        // bundled shader decides which one survives. A copy of the shader left with a `switch` while the
-        // generator emits a tree (or the other way round) breaks the whole text pipeline, so pin it.
+        // the generator and the bundled shader have to agree on which form survives
         val file = listOf("../common-resources/text.vsh", "common-resources/text.vsh").map(::File).firstOrNull { it.isFile }
         assumeTrue(file != null, "the test has to run from the module directory to find the bundled shader")
         val shader = file!!.readText()
