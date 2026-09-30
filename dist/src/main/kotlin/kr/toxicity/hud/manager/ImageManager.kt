@@ -59,9 +59,20 @@ object ImageManager : BetterHudManager {
             if (list.isNotEmpty()) {
                 list.distinctBy {
                     it.name
-                }.forEach {
-                    PackGenerator.addTask(resource.textures + it.name) {
-                        it.image.image.toByteArray()
+                }.forEach { image ->
+                    val tiles = image.tiles
+                    if (tiles == null) {
+                        PackGenerator.addTask(resource.textures + image.name) {
+                            image.image.image.toByteArray()
+                        }
+                    } else {
+                        // The whole image exceeds the font atlas: only the tiles are drawn, so only
+                        // they have to be shipped.
+                        tiles.tiles.forEach { tile ->
+                            PackGenerator.addTask(resource.textures + tile.name) {
+                                tile.image.toByteArray()
+                            }
+                        }
                     }
                 }
             }

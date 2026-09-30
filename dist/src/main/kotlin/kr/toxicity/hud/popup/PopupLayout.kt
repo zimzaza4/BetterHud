@@ -139,25 +139,37 @@ class PopupLayout(
                     val scale = height.toDouble() / it.image.image.height
                     val xOffset = (it.image.xOffset * scale).roundToInt()
                     val ascent = pixel.y
+                    // Same as a hud image: too big for the font atlas means cut into tiles which
+                    // are put back together with their own ascents and padding spaces.
+                    val tiles = it.tiles?.takeIf { height > 0 }?.place(height)
                     val component = image(target.identifier(imageShader, ascent, fileName)) {
-                        val char = parent.newChar
-                        createAscent(imageShader, ascent) { y ->
-                            array += jsonObjectOf(
-                                "type" to "bitmap",
-                                "file" to fileName,
-                                "ascent" to y,
-                                "height" to height,
-                                "chars" to jsonArrayOf(char)
+                        if (tiles != null) tiles.toWidthComponent(
+                            imageShader,
+                            parent.imageKey,
+                            array,
+                            ascent,
+                            { parent.newChar },
+                            parent::getOrCreateSpace
+                        ) else {
+                            val char = parent.newChar
+                            createAscent(imageShader, ascent) { y ->
+                                array += jsonObjectOf(
+                                    "type" to "bitmap",
+                                    "file" to fileName,
+                                    "ascent" to y,
+                                    "height" to height,
+                                    "chars" to jsonArrayOf(char)
+                                )
+                            }
+                            val xWidth = (it.image.image.width.toDouble() * scale).roundToInt()
+                            val build = Component.text()
+                                .font(parent.imageKey)
+                            val comp = WidthComponent(
+                                build.content("$char$negativeSpace"),
+                                xWidth
                             )
+                            comp
                         }
-                        val xWidth = (it.image.image.width.toDouble() * scale).roundToInt()
-                        val build = Component.text()
-                            .font(parent.imageKey)
-                        val comp = WidthComponent(
-                            build.content("$char$negativeSpace"),
-                            xWidth
-                        )
-                        comp
                     }
                     list += component.toPixelComponent(pixel.x + xOffset)
                 }

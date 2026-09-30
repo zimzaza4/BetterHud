@@ -90,6 +90,13 @@ void main() {
     bool bhRotOn = false;
     float bhRot = 0.0;
     vec2 bhRotHalf = vec2(0.0);
+    // Offset from the centre of this glyph to the point the element turns around. Zero for a glyph
+    // which covers the whole element; a cut image is drawn as several glyphs, and each of them gets
+    // the offset from its own centre to the element's one so that the pieces do not tear apart.
+    // The define lets a case body assign it: a hand-edited copy of this file which predates it simply
+    // compiles the assignment out instead of failing to compile the whole shader.
+    #define BH_ROT_ANCHOR
+    vec2 bhRotAnchor = vec2(0.0);
     int bhPayload = 0;
     bool bhRotateOffset = false;   // rotate the payload offset together with the element
     float bhClipIn = 0.0;
@@ -199,7 +206,7 @@ void main() {
         float bhCi = float(gl_VertexID % 4);
         vec2 bhCs = vec2((bhCi == 2.0 || bhCi == 3.0) ? 1.0 : -1.0, (bhCi == 1.0 || bhCi == 2.0) ? 1.0 : -1.0);
 #endif
-        vec2 bhPivot = pos.xy - bhCs * bhRotHalf;
+        vec2 bhPivot = pos.xy - bhCs * bhRotHalf + bhRotAnchor;
         float bhCa = cos(bhRot);
         float bhSa = sin(bhRot);
         if (bhRotateOffset) {

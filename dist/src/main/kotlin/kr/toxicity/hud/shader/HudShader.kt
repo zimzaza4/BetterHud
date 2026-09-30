@@ -28,6 +28,15 @@ data class HudShader(
     val clipOriginX: Double = 0.0,
     val clipOriginY: Double = 0.0,
     val hasClipOrigin: Boolean = false,
+    // Offset from the centre of the glyph to the centre the element turns (and clips) around.
+    // It is zero for every element drawn as one glyph; a cut image turns that glyph into several
+    // tiles, and each of them has to carry the offset from its own centre to the element's one,
+    // or the pieces would rotate around different points and tear apart.
+    // Both must stay in the compareTo chain: HudShader is the key of the TreeMap that assigns case
+    // ids, so two tiles differing only in the anchor would collapse into one key and one of them
+    // would turn around the other one's centre.
+    val rotationAnchorX: Double = 0.0,
+    val rotationAnchorY: Double = 0.0,
 ) : Comparable<HudShader> {
     companion object {
         private val comparator = Comparator.comparing { s: HudShader ->
@@ -64,8 +73,19 @@ data class HudShader(
             s.clipOriginX
         }.thenComparingDouble { s: HudShader ->
             s.clipOriginY
+        }.thenComparingDouble { s: HudShader ->
+            s.rotationAnchorX
+        }.thenComparingDouble { s: HudShader ->
+            s.rotationAnchorY
         }
     }
+
+    /**
+     * Whether the vertex shader turns (or clips) this element around its own centre.
+     * Only then does a tile of a cut image have to be told where that centre is.
+     */
+    val pivotsAroundElementCenter: Boolean
+        get() = rotationDynamic || rotationDegree != 0.0 || clipOuter > 0.0
 
     override fun compareTo(other: HudShader): Int {
         return comparator.compare(this, other)
