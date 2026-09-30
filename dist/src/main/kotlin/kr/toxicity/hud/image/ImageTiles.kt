@@ -64,9 +64,14 @@ class ImageTiles(
     fun place(displayHeight: Int): TiledImageLayout {
         val tileDisplayHeight = (tileHeight * (displayHeight.toDouble() / sourceHeight)).roundToInt()
         val factor = tileDisplayHeight.toDouble() / tileHeight
-        // one rounding per boundary instead of one per tile: the columns cannot drift, and the whole
-        // grid stays as wide as the untouched image would have been
+        // One boundary per column, computed on its own so the columns cannot drift apart.
+        //
+        // `of` picks the tile width to be a multiple of the tile height, so `tileWidth * factor` - the
+        // width the client draws a tile at - is `(tileWidth / tileHeight) * tileDisplayHeight`, a whole
+        // number of pixels at every scale. The boundary below therefore lands exactly on the tile's own
+        // right edge and neighbouring tiles touch instead of leaving a hairline gap.
         fun boundary(column: Int) = (column * tileWidth * factor).roundToInt()
+        val gridWidth = boundary(columns)
         return TiledImageLayout(
             List(tiles.size) { index ->
                 val column = index % columns
@@ -82,8 +87,11 @@ class ImageTiles(
             },
             columns,
             rows,
-            boundary(columns),
-            rows * tileDisplayHeight
+            // What the untouched image would have been drawn at. The grid can be wider because the
+            // last column is padded to a whole tile; the caller trims that back off.
+            (sourceWidth * factor).roundToInt(),
+            rows * tileDisplayHeight,
+            gridWidth
         )
     }
 
@@ -104,11 +112,25 @@ class ImageTiles(
          * @param name file name of a tile, called only when the image is actually cut
          */
         fun of(image: BufferedImage, name: (column: Int, row: Int) -> String): ImageTiles? {
-            val columns = ceil(image.width.toDouble() / ATLAS_SIZE).toInt().coerceAtLeast(1)
             val rows = ceil(image.height.toDouble() / ATLAS_SIZE).toInt().coerceAtLeast(1)
-            if (columns == 1 && rows == 1) return null
-            val tileWidth = ceil(image.width.toDouble() / columns).toInt()
             val tileHeight = ceil(image.height.toDouble() / rows).toInt()
+            val gridColumns = ceil(image.width.toDouble() / ATLAS_SIZE).toInt().coerceAtLeast(1)
+            if (gridColumns == 1 && rows == 1) return null
+            // The client draws a tile `tileWidth * jsonHeight / cellHeight` pixels wide, and the text
+            // cursor which puts the tiles next to each other can only move by whole pixels.
+            //
+            // So unless that product is a whole number the two disagree by a fraction of a pixel on
+            // every column boundary, and the gap shows as a hairline seam (vanilla has the same
+            // rounding between any two glyphs, but a seam *inside* one picture is much easier to see).
+            // Making the tile width a multiple of the cell height fixes it for every height, i.e. for
+            // every scale: the width becomes `(tileWidth / tileHeight) * jsonHeight`, always whole.
+            //
+            // The price is transparent padding on the right of the last column. It is only texture
+            // space: the caller trims it off the component's width, so the element still reports the
+            // size the untouched image would have had.
+            val tileWidth = if (gridColumns == 1) image.width
+            else (ATLAS_SIZE / tileHeight).coerceAtLeast(1) * tileHeight
+            val columns = ceil(image.width.toDouble() / tileWidth).toInt().coerceAtLeast(1)
             val tiles = ArrayList<ImageTile>(columns * rows)
             for (row in 0 until rows) {
                 for (column in 0 until columns) {
@@ -116,6 +138,7 @@ class ImageTiles(
                     val y = row * tileHeight
                     val width = minOf(tileWidth, image.width - x)
                     val height = minOf(tileHeight, image.height - y)
+                    if (width <= 0 || height <= 0) continue
                     val piece = image.getSubimage(x, y, width, height)
                     tiles += ImageTile(
                         name(column, row),
@@ -142,7 +165,15 @@ class TiledImageLayout(
     /** Display width of the whole image, close to what the untouched one would have reported. */
     val width: Int,
     /** Display height of the whole image, the padding of the last row included. */
-    val height: Int
+    val height: Int,
+    /**
+     * Display width of the whole grid, transparent padding of the last column included.
+     *
+     * It is what a row actually advances, so it is what the row rewind has to undo. [width] can be
+     * smaller: the caller trims the difference off with one more space, so the element still reports
+     * the size of the untouched image.
+     */
+    val gridWidth: Int
 ) {
     fun get(column: Int, row: Int): PlacedTile = tiles[row * columns + column]
 
@@ -226,8 +257,12 @@ class TiledImageLayout(
                 }
             }
             // Every row is drawn from the left edge of the image: undo what the row advanced.
-            if (row != rows - 1) content.append(space(-width))
+            if (row != rows - 1) content.append(space(-gridWidth))
         }
+        // ... and drop the transparent padding of the last column, so the element is exactly as wide
+        // as the untouched image would have been (which is what the layout, the clip and a rotation
+        // pivot are measured against).
+        if (gridWidth != width) content.append(space(width - gridWidth))
         return WidthComponent(builder.content(content.toString()), width)
     }
 }

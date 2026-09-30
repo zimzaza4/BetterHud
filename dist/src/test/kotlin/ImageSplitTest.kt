@@ -10,6 +10,7 @@ import java.io.ByteArrayInputStream
 import java.util.TreeMap
 import javax.imageio.ImageIO
 import kotlin.math.abs
+import kotlin.math.floor
 import kotlin.math.roundToInt
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -83,33 +84,39 @@ class ImageSplitTest {
 
     @Test
     fun testCutKeepsTheSourceGrid() {
+        // 300 x 100 needs two columns; the cell height is the whole image, and the cell width is the
+        // largest multiple of it which still fits the atlas (200), so that what the client draws a tile
+        // at is a whole number of pixels at every scale
         val tiles = ImageTiles.of(image(300, 100)) { column, row -> "$column-$row" }!!
         assertEquals(2, tiles.columns)
         assertEquals(1, tiles.rows)
-        assertEquals(150, tiles.tileWidth)
+        assertEquals(200, tiles.tileWidth)
         assertEquals(100, tiles.tileHeight)
         assertEquals(300, tiles.sourceWidth)
         assertEquals(100, tiles.sourceHeight)
-        assertEquals(150, tiles[0, 0].image.width)
+        assertEquals(200, tiles[0, 0].image.width)
         assertEquals(100, tiles[0, 0].image.height)
         assertEquals("0-0", tiles[0, 0].name)
         assertEquals("1-0", tiles[1, 0].name)
+        // the second column is short, and is padded out to a whole cell
+        assertEquals(200, tiles[1, 0].image.width)
+        assertEquals(0, tiles[1, 0].image.getRGB(150, 50) ushr 24)
     }
 
     @Test
     fun testEdgeTilesArePaddedToTheGrid() {
-        // 301 x 101 is cut into tiles of 151 x 101: the last column and the last row are one pixel
-        // short, and are padded with transparency - a shorter cell would be drawn on another scale
+        // 301 x 101 is cut into cells of 202 x 101: the last column is one pixel short (padded with
+        // transparency) - a shorter cell would be drawn on another scale
         val tiles = ImageTiles.of(image(301, 101)) { _, _ -> "tile" }!!
         assertEquals(2, tiles.columns)
         assertEquals(1, tiles.rows)
         tiles.tiles.forEach {
-            assertEquals(151, it.image.width)
+            assertEquals(202, it.image.width)
             assertEquals(101, it.image.height)
         }
         val last = tiles[1, 0].image
         for (y in 0 until last.height) {
-            assertEquals(0, last.getRGB(150, y) ushr 24, "the padding of the last column has to be transparent")
+            assertEquals(0, last.getRGB(201, y) ushr 24, "the padding of the last column has to be transparent")
         }
         val tall = ImageTiles.of(image(100, 301)) { _, _ -> "tile" }!!
         assertEquals(2, tall.rows)
@@ -168,8 +175,11 @@ class ImageSplitTest {
         val tileHeight = (tiles.tileHeight * (350.0 / 400)).roundToInt()
         val factor = tileHeight.toDouble() / tiles.tileHeight
         fun boundary(column: Int) = (column * tiles.tileWidth * factor).roundToInt()
-        assertEquals(boundary(tiles.columns), layout.width)
+        assertEquals(boundary(tiles.columns), layout.gridWidth)
         assertEquals(tiles.rows * tileHeight, layout.height)
+        // what the untouched image would have been drawn at: the grid may be wider than that
+        assertEquals((700.0 * tileHeight / tiles.tileHeight).roundToInt(), layout.width)
+        assertTrue(layout.width <= layout.gridWidth)
         for (row in 0 until layout.rows) {
             for (column in 0 until layout.columns) {
                 val tile = layout.get(column, row)
@@ -192,13 +202,67 @@ class ImageSplitTest {
             }
         }
         val last = layout.get(layout.columns - 1, layout.rows - 1)
-        assertEquals(layout.width, last.x + last.width)
+        assertEquals(layout.gridWidth, last.x + last.width)
         assertEquals(layout.height, last.y + last.height)
-        // and the whole thing is about as wide as the untouched image would have been
-        assertTrue(
-            abs(layout.width - (700.0 * 350 / 400).roundToInt()) <= 1,
-            "the cut image is ${layout.width} px wide instead of ${(700.0 * 350 / 400).roundToInt()}"
-        )
+    }
+
+    /**
+     * The reason the tile width is a multiple of the cell height.
+     *
+     * The client draws a tile `tileWidth * jsonHeight / cellHeight` wide, and the text cursor which
+     * puts the tiles next to each other can only move by whole pixels. If that product is not a whole
+     * number the two disagree by a fraction of a pixel on every column boundary - a hairline seam
+     * inside the picture, which is far easier to spot than the same rounding between two glyphs.
+     *
+     * With the rule in [ImageTiles.of] the product is always whole, at every scale, so the mismatch
+     * has to be exactly zero everywhere - not merely small.
+     */
+    @Test
+    fun testEveryScaleDrawsTilesOnWholePixels() {
+        val sources = listOf(600 to 64, 512 to 512, 260 to 16, 64 to 600, 301 to 101, 700 to 400, 4096 to 17)
+        val scales = listOf(0.15, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 1.1, 1.3, 1.5, 1.6, 2.4)
+        var checked = 0
+        for ((width, height) in sources) {
+            val tiles = ImageTiles.of(image(width, height)) { _, _ -> "tile" } ?: continue
+            for (scale in scales) {
+                val displayHeight = (height * scale).roundToInt()
+                if (displayHeight <= 0) continue
+                val layout = tiles.place(displayHeight)
+                val factor = layout.get(0, 0).height.toDouble() / tiles.tileHeight
+                val drawnWidth = tiles.tileWidth * factor
+                // a single column has no seam to leave: its tile only meets whatever comes after the
+                // element, where vanilla rounds the same way for any glyph. Two columns and up must
+                // line up exactly, because a gap there is a gap inside the picture.
+                if (tiles.columns > 1) {
+                    assertTrue(
+                        abs(drawnWidth - drawnWidth.roundToInt()) < 1e-6,
+                        "$width x $height at $scale draws a tile $drawnWidth px wide - a fraction of a pixel"
+                    )
+                }
+                for (row in 0 until layout.rows) {
+                    for (column in 0 until layout.columns) {
+                        val tile = layout.get(column, row)
+                        if (tiles.columns > 1) {
+                            assertEquals(
+                                drawnWidth,
+                                tile.width.toDouble(),
+                                1e-6,
+                                "$width x $height at $scale: column $column draws $drawnWidth px into a slot of ${tile.width}"
+                            )
+                        }
+                        if (column > 0) {
+                            assertEquals(
+                                layout.get(column - 1, row).x + layout.get(column - 1, row).width,
+                                tile.x,
+                                "the tiles of a row have to touch, or there is a seam"
+                            )
+                        }
+                    }
+                }
+                checked++
+            }
+        }
+        assertTrue(checked > 50, "the case list stopped covering enough combinations")
     }
 
     @Test
@@ -212,13 +276,14 @@ class ImageSplitTest {
         assertEquals(1, layout.rows)
         val tile = layout.get(0, 0)
         assertEquals(2, tile.height)
-        // round(0.5 + 2 / 8 * 250) = 63: the width follows the factor the client will use, not 2/8 alone
-        assertEquals((250 * (2.0 / 8)).roundToInt(), tile.width)
-        // the second column takes up the pixel the first one rounded away
-        assertEquals(125, layout.width)
-        assertEquals(layout.width, layout.get(0, 0).width + layout.get(1, 0).width)
+        // the cell is 256 x 8, so a tile is drawn 256 * 2 / 8 = 64 px wide - whole, and identical for
+        // both columns, which is exactly what the rule is for
+        assertEquals(64, tile.width)
+        assertEquals(64, layout.get(1, 0).width)
+        assertEquals(128, layout.gridWidth)
+        assertEquals(layout.gridWidth, layout.get(0, 0).width + layout.get(1, 0).width)
         // the untouched image would have been round(500 * 2 / 8) = 125 wide
-        assertTrue(abs(layout.width - 125) <= 1, "layout width was ${layout.width}")
+        assertEquals(125, layout.width)
     }
 
     @Test
@@ -240,18 +305,19 @@ class ImageSplitTest {
 
     @Test
     fun testAdvanceMirrorsTheVanillaProvider() {
-        // the first tile (x 0..149) is opaque up to x = 99, the second one is fully transparent
+        // the first tile (x 0..249) is opaque up to x = 99, the second one is fully transparent
         val tiles = ImageTiles.of(image(300, 10) { x, _ -> x < 100 }) { _, _ -> "tile" }!!
         val layout = tiles.place(10)
         val first = layout.get(0, 0)
-        assertEquals(150, first.width)
+        assertEquals(250, first.width)
         // BitmapProvider: (int)(0.5 + 100 * height / cellHeight) + 1
         assertEquals(101, first.advance)
-        assertEquals(49, first.padding)
+        assertEquals(149, first.padding)
         val second = layout.get(1, 0)
+        assertEquals(250, second.width)
         // nothing opaque at all: (int)(0.5 + 0) + 1
         assertEquals(1, second.advance)
-        assertEquals(149, second.padding)
+        assertEquals(249, second.padding)
     }
 
     @Test
@@ -281,12 +347,15 @@ class ImageSplitTest {
         val layout = tiles.place(600)
         assertEquals(2, layout.columns)
         assertEquals(3, layout.rows)
+        assertEquals(400, layout.gridWidth)
+        assertEquals(300, layout.width)
         var index = 0
         val component = layout.toWidthComponent(shader(), FONT, null, 100, { "c${index++}" }, { "<$it>" })
         // every tile is fully opaque, so the vanilla advance is one longer than the tile: the -1 space
-        // (the same trick the untouched code uses) pads it back, and every row rewinds to the left edge
+        // (the same trick the untouched code uses) pads it back; every row then rewinds to the left
+        // edge, and the trailing space trims the padded last column off the element's width
         assertEquals(
-            "c0<-1>c1<-1><-300>c2<-1>c3<-1><-300>c4<-1>c5<-1>",
+            "c0<-1>c1<99><-400>c2<-1>c3<99><-400>c4<-1>c5<99><-100>",
             component.component.build().content()
         )
         assertEquals(300, component.width)
@@ -294,20 +363,25 @@ class ImageSplitTest {
 
     @Test
     fun testCompositionSkipsAnEmptyPadding() {
-        // tile 0 ends 2 pixels early, which the rounding of the advance swallows: padding 0, no space
-        val tiles = ImageTiles.of(image(300, 8) { x, _ -> x < 148 }) { _, _ -> "tile" }!!
+        // tile 0 is opaque up to x = 252 of its 256: the advance comes out exactly as wide as the
+        // tile, so there is nothing to pad back and no space is written
+        val tiles = ImageTiles.of(image(300, 8) { x, _ -> x < 253 }) { _, _ -> "tile" }!!
         val layout = tiles.place(4)
         val first = layout.get(0, 0)
-        assertEquals(75, first.width)
-        assertEquals(75, first.advance)
+        assertEquals(128, first.width)
+        assertEquals(128, first.advance)
         assertEquals(0, first.padding)
         val second = layout.get(1, 0)
-        assertEquals(75, second.width)
+        assertEquals(128, second.width)
         assertEquals(1, second.advance)
-        assertEquals(74, second.padding)
+        assertEquals(127, second.padding)
+        // the grid is 256 wide, the image is round(300 * 0.5) = 150: the difference is trimmed
+        assertEquals(256, layout.gridWidth)
+        assertEquals(150, layout.width)
         var index = 0
         val component = layout.toWidthComponent(shader(), FONT, null, 0, { "c${index++}" }, { "<$it>" })
-        assertEquals("c0c1<74>", component.component.build().content())
+        assertEquals("c0c1<127><-106>", component.component.build().content())
+        assertEquals(150, component.width)
     }
 
     @Test
