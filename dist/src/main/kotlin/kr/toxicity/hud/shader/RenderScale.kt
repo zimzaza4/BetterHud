@@ -12,6 +12,8 @@ class RenderScale(
             scale.x
         }.thenComparingDouble { scale: Scale ->
             scale.y
+        }.thenComparing { scale: Scale ->
+            scale.staticScale
         }
         private val comparator = Comparator.comparing { scale: RenderScale ->
             scale.relativeOffset

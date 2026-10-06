@@ -2,6 +2,13 @@ package kr.toxicity.hud.shader
 
 import kr.toxicity.hud.location.GuiLocation
 
+/**
+ * The key which decides whether two elements share one case of `text.vsh`.
+ *
+ * Identity follows the generated code (see [ShaderBody]), not the field list: a field which emits no
+ * line must not split a case, or a config with many differently sized elements inflates into one case
+ * per element (each case is a compiled switch branch, and there are only 255 element ids at all).
+ */
 data class HudShader(
     val gui: GuiLocation,
     val renderScale: RenderScale,
@@ -20,63 +27,24 @@ data class HudShader(
     val positionInRotatedSpace: Boolean = false,
     val clipInner: Double = 0.0,
     val clipOuter: Double = 0.0,
-    // Explicit clip circle center (optional). Ignored unless hasClipOrigin is true, in which case the shader
-    // uses it instead of the element's own center (bhPivot).
-    // All three must stay in the compareTo chain: HudShader is the key of the TreeMap that assigns case ids,
-    // so two elements differing only in clip-origin would collapse into one key and share a case body -
-    // one of them would then clip against the other's center.
+    // Explicit clip circle center (optional). Ignored unless hasClipOrigin is true, in which case the
+    // shader uses it instead of the element's own center (bhPivot).
     val clipOriginX: Double = 0.0,
     val clipOriginY: Double = 0.0,
     val hasClipOrigin: Boolean = false,
     // Offset from the center of this glyph to the center the element turns (and clips) around. Zero for
     // an element drawn as one glyph; every tile of a cut image carries its own, or the pieces would
     // rotate around different points.
-    // Both must stay in the compareTo chain: HudShader is the key of the TreeMap that assigns case ids,
-    // so two tiles differing only in the anchor would collapse into one key and share a case body.
     val rotationAnchorX: Double = 0.0,
     val rotationAnchorY: Double = 0.0,
 ) : Comparable<HudShader> {
-    companion object {
-        private val comparator = Comparator.comparing { s: HudShader ->
-            s.gui
-        }.thenComparing { s: HudShader ->
-            s.renderScale
-        }.thenComparing { s: HudShader ->
-            s.layer
-        }.thenComparing { s: HudShader ->
-            s.outline
-        }.thenComparing { s: HudShader ->
-            s.opacity
-        }.thenComparing { s: HudShader ->
-            s.property
-        }.thenComparing { s: HudShader ->
-            s.rotationDynamic
-        }.thenComparing { s: HudShader ->
-            s.positionDynamic
-        }.thenComparingDouble { s: HudShader ->
-            s.rotationDegree
-        }.thenComparingDouble { s: HudShader ->
-            s.rotationHalfX
-        }.thenComparingDouble { s: HudShader ->
-            s.rotationHalfY
-        }.thenComparing { s: HudShader ->
-            s.positionInRotatedSpace
-        }.thenComparingDouble { s: HudShader ->
-            s.clipInner
-        }.thenComparingDouble { s: HudShader ->
-            s.clipOuter
-        }.thenComparing { s: HudShader ->
-            s.hasClipOrigin
-        }.thenComparingDouble { s: HudShader ->
-            s.clipOriginX
-        }.thenComparingDouble { s: HudShader ->
-            s.clipOriginY
-        }.thenComparingDouble { s: HudShader ->
-            s.rotationAnchorX
-        }.thenComparingDouble { s: HudShader ->
-            s.rotationAnchorY
-        }
-    }
+
+    /**
+     * Whether the case body emits the transform block: everything below [property] in [ShaderBody].
+     * An element which neither turns, nor takes a payload, nor clips must not be split by those fields.
+     */
+    val transforms: Boolean
+        get() = rotationDynamic || positionDynamic || rotationDegree != 0.0 || clipOuter > 0.0
 
     /**
      * Whether the vertex shader turns (or clips) this element around its own centre.
@@ -86,7 +54,85 @@ data class HudShader(
         get() = rotationDynamic || rotationDegree != 0.0 || clipOuter > 0.0
 
     override fun compareTo(other: HudShader): Int {
-        return comparator.compare(this, other)
+        var result = gui.compareTo(other.gui)
+        if (result != 0) return result
+        result = renderScale.compareTo(other.renderScale)
+        if (result != 0) return result
+        result = layer.compareTo(other.layer)
+        if (result != 0) return result
+        // The body only writes `outline = true`, so the value itself is irrelevant.
+        result = (outline != 0).compareTo(other.outline != 0)
+        if (result != 0) return result
+        result = opacity.compareTo(other.opacity)
+        if (result != 0) return result
+        result = property.compareTo(other.property)
+        if (result != 0) return result
+        if (!transforms && !other.transforms) return 0
+        result = rotationDynamic.compareTo(other.rotationDynamic)
+        if (result != 0) return result
+        result = positionDynamic.compareTo(other.positionDynamic)
+        if (result != 0) return result
+        result = rotationDegree.compareTo(other.rotationDegree)
+        if (result != 0) return result
+        result = rotationHalfX.compareTo(other.rotationHalfX)
+        if (result != 0) return result
+        result = rotationHalfY.compareTo(other.rotationHalfY)
+        if (result != 0) return result
+        result = positionInRotatedSpace.compareTo(other.positionInRotatedSpace)
+        if (result != 0) return result
+        if (clipOuter != other.clipOuter) return clipOuter.compareTo(other.clipOuter)
+        if (clipOuter > 0.0) {
+            result = clipInner.compareTo(other.clipInner)
+            if (result != 0) return result
+            result = hasClipOrigin.compareTo(other.hasClipOrigin)
+            if (result != 0) return result
+            // The origin is only written when it was given; otherwise it is the element's own center.
+            if (hasClipOrigin) {
+                result = clipOriginX.compareTo(other.clipOriginX)
+                if (result != 0) return result
+                result = clipOriginY.compareTo(other.clipOriginY)
+                if (result != 0) return result
+            }
+        }
+        result = rotationAnchorX.compareTo(other.rotationAnchorX)
+        if (result != 0) return result
+        result = rotationAnchorY.compareTo(other.rotationAnchorY)
+        if (result != 0) return result
+        return 0
+    }
+
+    /**
+     * Identity is the same question as [compareTo]: this class is the key of the tree map which assigns
+     * the case ids, so "compareTo == 0" and "generates the same case body" have to mean the same thing.
+     */
+    override fun equals(other: Any?): Boolean = other is HudShader && compareTo(other) == 0
+
+    override fun hashCode(): Int {
+        var result = gui.hashCode()
+        result = 31 * result + renderScale.hashCode()
+        result = 31 * result + layer
+        result = 31 * result + (outline != 0).hashCode()
+        result = 31 * result + opacity.hashCode()
+        result = 31 * result + property
+        if (!transforms) return result
+        result = 31 * result + rotationDynamic.hashCode()
+        result = 31 * result + positionDynamic.hashCode()
+        result = 31 * result + rotationDegree.hashCode()
+        result = 31 * result + rotationHalfX.hashCode()
+        result = 31 * result + rotationHalfY.hashCode()
+        result = 31 * result + positionInRotatedSpace.hashCode()
+        if (clipOuter > 0.0) {
+            result = 31 * result + clipInner.hashCode()
+            result = 31 * result + clipOuter.hashCode()
+            result = 31 * result + hasClipOrigin.hashCode()
+            if (hasClipOrigin) {
+                result = 31 * result + clipOriginX.hashCode()
+                result = 31 * result + clipOriginY.hashCode()
+            }
+        }
+        result = 31 * result + rotationAnchorX.hashCode()
+        result = 31 * result + rotationAnchorY.hashCode()
+        return result
     }
 
     fun toBackground(otherOpacity: Double) = HudShader(
