@@ -103,6 +103,18 @@ public interface HudPlayer extends BetterCommandSource {
     long getTick();
 
     /**
+     * Gets the world's game time in ticks.
+     *
+     * It is the clock the client's GameTime uniform is derived from (GameTime * 24000), so smoothing
+     * needs it to tell how old the data it is drawing is. A platform which cannot tell it - a proxy,
+     * which has no world - keeps this default and elements with `smooth` simply step per update.
+     * @return world game time in ticks, or 0 when unknown
+     */
+    default long gameTime() {
+        return 0L;
+    }
+
+    /**
      * Cancel and close player's data.
      */
     void cancel();

@@ -145,8 +145,10 @@ class TiledImageLayout(
         shader.copy(
             rotationHalfX = tile.width / 2.0,
             rotationHalfY = tile.height / 2.0,
-            rotationAnchorX = width / 2.0 - tile.centerX(),
-            rotationAnchorY = height / 2.0 - tile.centerY()
+            rotationAnchorX = shader.rotationAnchorX + width / 2.0 - tile.centerX(),
+            rotationAnchorY = shader.rotationAnchorY + height / 2.0 - tile.centerY(),
+            // A tile only knows its own half, so the region is told the element's half instead.
+            clip = shader.clip?.copy(elementHalfX = width / 2.0, elementHalfY = height / 2.0)
         )
     } else shader
 

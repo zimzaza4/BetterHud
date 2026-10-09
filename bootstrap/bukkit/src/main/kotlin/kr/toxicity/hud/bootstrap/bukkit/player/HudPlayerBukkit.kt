@@ -77,4 +77,6 @@ class HudPlayerBukkit(
     }
 
     override fun hasPermission(perm: String): Boolean = player.hasPermission(perm)
+
+    override fun gameTime(): Long = player.world.gameTime
 }

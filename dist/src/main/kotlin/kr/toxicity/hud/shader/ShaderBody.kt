@@ -31,7 +31,44 @@ object ShaderBody {
         if (shader.gui.y != 0.0) body.add("    yGui = ui.y * ${shader.gui.y.toFloat()} / 100.0;")
         if (shader.layer != 0) body.add("    layer = ${shader.layer};")
         if (shader.outline != 0) body.add("    outline = true;")
-        val payload = PayloadKind.of(shader.rotationDynamic, shader.positionDynamic)
+        shader.smooth?.let {
+            // A scrolling element's payload carries a four bit tick, so a ramp longer than its window is one
+            // its client cannot measure. The other layouts carry a wider counter and keep their own length.
+            val duration = if (shader.scroll != null) it.duration.coerceIn(0.0, ScrollTween.WINDOW)
+            else it.duration
+            body.add("    bhSmoothDur = ${duration.toFloat()};")
+            body.add("    bhSmoothEase = ${it.easing}.0;")
+            if (it.omegaScale != 0.0) body.add("    bhOmegaScale = ${it.omegaScale.toFloat()};")
+        }
+        shader.clip?.let {
+            body.add("    bhFillOn = true;")
+            body.add("    bhFillMin = vec2(${it.x.toFloat()}, ${it.y.toFloat()});")
+            body.add("    bhFillMax = vec2(${(it.x + it.width).toFloat()}, ${(it.y + it.height).toFloat()});")
+            if (it.radius != 0.0) body.add("    bhFillRadius = ${it.radius.toFloat()};")
+            if (it.soft != 0.0) body.add("    bhFillSoft = ${it.soft.toFloat()};")
+            body.add("    bhFillAxis = ${it.axis};")
+            if (it.invert) body.add("    bhFillInvert = true;")
+            if (!it.followsContent) body.add("    bhFillFollow = false;")
+            // The region is measured from the element's top-left, while the shader's pivot is its centre.
+            body.add("    bhElemHalf = vec2(${it.elementHalfX.toFloat()}, ${it.elementHalfY.toFloat()});")
+        }
+        shader.scroll?.let {
+            // The payload drives a position instead of a boundary: 1 = x, 2 = y (see bhValueUse).
+            body.add("    bhValueUse = ${it.axis + 1};")
+            body.add("    bhValueScale = ${it.scale.toFloat()};")
+        }
+        val payload = PayloadKind.of(
+            shader.rotationDynamic,
+            shader.positionDynamic,
+            shader.rotationSmooth,
+            shader.valueSmooth,
+            shader.scrollSmooth || (shader.rotationTween && !shader.rotationWide),
+            shader.rotationWide
+        )
+        if (shader.rotationWide) {
+            // The eight bit payload drives the angle itself instead of a boundary or an offset.
+            body.add("    bhValueRot = true;")
+        }
         if (shader.transforms) {
             body.add("    bhRotOn = true;")
             body.add("    bhRot = ${Math.toRadians(shader.rotationDegree).toFloat()};")

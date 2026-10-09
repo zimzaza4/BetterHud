@@ -42,6 +42,16 @@ class HudImageParser(parent: HudImpl, private val imageLayout: ImageLayout, gui:
             imageLayout.clipOriginX ?: 0.0,
             imageLayout.clipOriginY ?: 0.0,
             imageLayout.clipOriginX != null && imageLayout.clipOriginY != null,
+            // `clip-rect` is written in element pixels from the top-left, and the shader gets there by
+            // adding the element's half to its centre - so the rectangle travels verbatim.
+            clip = imageLayout.clip?.copy(
+                elementHalfX = (rotationSize?.width ?: 0) * rotationScale / 2.0,
+                elementHalfY = (rotationSize?.height ?: 0) * rotationScale / 2.0
+            ),
+            smooth = imageLayout.smooth,
+            scroll = imageLayout.scroll,
+            rotationAnchorX = imageLayout.rotationAnchorX,
+            rotationAnchorY = imageLayout.rotationAnchorY
         )
         val negativeSpace = parent.getOrCreateSpace(-1)
         fun ImageElement.toComponent(parentComponent: ImageComponent? = null): ImageComponent {

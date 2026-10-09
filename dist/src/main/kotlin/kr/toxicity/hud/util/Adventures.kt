@@ -295,6 +295,81 @@ fun PixelComponent.applyTransformPayload(
     PayloadKind.ROTATION_POSITION -> applyRotationPositionPayload(degree, dx, dy)
     else -> this
 }
+
+/**
+ * Replaces this component's colour with a tweened value payload (`clip-fill`).
+ *
+ * Red holds the value the boundary starts from and green the one it walks to (both 0..1, so a
+ * percentage is divided by 100 first), blue the world tick the tween was sent at. The shader evaluates
+ * the curve on every frame, which is what turns an update once per `tick` into continuous motion.
+ * @param from value it was at, 0..1
+ * @param to value it moves to, 0..1
+ * @param tick world game time in ticks (reduced by the shader to its own 240 step counter)
+ */
+fun PixelComponent.applySmoothValuePayload(from: Double, to: Double, tick: Int): PixelComponent =
+    copy().also {
+        it.component.component.color(TextColor.color(
+            (from.coerceIn(0.0, 1.0) * 255.0).roundToInt().coerceIn(0, 255),
+            (to.coerceIn(0.0, 1.0) * 255.0).roundToInt().coerceIn(0, 255),
+            tick and 0xFF
+        ))
+    }
+
+/**
+ * Replaces this component's colour with the tween payload (`bhPayload = 6`) a content scroll uses: two ten
+ * bit absolute endpoints and the tick the update was made in.
+ *
+ * Absolute endpoints are what a rate (`bhPayload = 5`) cannot be - a rate is an estimate of the next
+ * update, so a turn arriving at a stop overshoots and is pulled back. The tick is what a bare pair of
+ * endpoints lacks: phased on the client's own tick boundary the ramp finished early and held, because a
+ * payload arrives in the middle of a tick.
+ * @param from value the ramp starts from, 0..1
+ * @param to value it walks to, 0..1
+ * @param tick world game time in ticks, reduced modulo 16 the way the shader reads it back
+ */
+fun PixelComponent.applyTweenPayload(from: Double, to: Double, tick: Int): PixelComponent =
+    copy().also {
+        val bits = RatePayload.packTween(from, to, tick)
+        it.component.component.color(
+            TextColor.color((bits shr 16) and 0xFF, (bits shr 8) and 0xFF, bits and 0xFF)
+        )
+    }
+
+/**
+ * Replaces this component's colour with a "value + rate" payload: the precise layout a rotation or a
+ * content scroll uses (`bhPayload = 5`), which unlike [applySmoothValuePayload] also carries how fast the
+ * value is moving, so the client can keep going between updates.
+ *
+ * Red/green hold an 11 bit value and a 5 bit world tick, blue the rate. **Both ranges are passed in, so
+ * this function never guesses a unit**: `value` and `valueRange` must be in one unit, `rate` and
+ * `rateRange` in another. The shader turns the value back into `bhNorm = value / valueRange` and the rate
+ * back into `bhRate = rate / rateRange`. For a rotation the value is degrees over 360 (a field spanning
+ * `0 .. 360`), the rate radians per tick over the element's `omegaScale`; for a scroll the value is the
+ * pixel offset over `2 * scale` around a standstill of zero, the rate pixels per tick over the same
+ * `2 * scale`. Passing degrees into a radians-shaped rate field - as an earlier revision did - makes the
+ * client overshoot the whole range every update, which reads as a violent shake, not as smoothing.
+ * @param value the value the client starts from
+ * @param rate how fast that value is moving per tick, in the rate's own unit
+ * @param tick world game time in ticks
+ * @param valueRange the width of `value` which fills the 11 bit field
+ * @param rateRange the rate which fills the 8 bit rate field (the shader's `bhOmegaScale`, or
+ * `2 * bhValueScale` for a scroll)
+ * @param valueCenter the value which lands in the middle of the field; the default spans `0 .. range`,
+ * and a scroll passes `0.0` because its field spans `-scale .. +scale`
+ */
+fun PixelComponent.applyRatePayload(
+    value: Double,
+    rate: Double,
+    tick: Int,
+    valueRange: Double,
+    rateRange: Double,
+    valueCenter: Double = valueRange / 2.0
+): PixelComponent {
+    val packed = RatePayload.pack(value, rate, tick, valueRange, rateRange, valueCenter)
+    return copy().also {
+        it.component.component.color(TextColor.color(packed shr 16 and 0xFF, packed shr 8 and 0xFF, packed and 0xFF))
+    }
+}
 infix fun PixelComponent.shadow(shadow: Int): PixelComponent = apply {
     component shadow shadow
 }

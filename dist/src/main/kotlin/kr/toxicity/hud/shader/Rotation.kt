@@ -74,15 +74,66 @@ object PayloadKind {
     const val ROTATION_POSITION = 3
 
     /**
+     * Red/green hold the value a boundary moves from and to, blue the tick it was sent for.
+     *
+     * Three channels are all a glyph has (Minecraft takes the text alpha from the caller, not from
+     * the component colour), so one element can carry one tweened value - which is what a filling
+     * bar, a growing ring or a fading panel needs.
+     */
+    const val SMOOTH_VALUE = 4
+
+    /**
+     * Red/green hold an 11 bit angle and a 5 bit tick, blue the angular rate.
+     *
+     * The rate lets the client keep turning between updates, so a placeholder driven rotation looks
+     * continuous instead of jumping once per element tick. Unlike [ROTATION] this one keeps the
+     * element's colour, because the angle moved into fewer bits.
+     */
+    const val SMOOTH_ROTATION = 5
+
+    /**
+     * Red/green/blue hold two ten bit endpoints of one tween and the four bit tick it belongs to.
+     *
+     * The layout a content scroll uses. Unlike [SMOOTH_ROTATION] it carries no rate: the client walks to a
+     * known endpoint and lands on it, so a change of speed cannot make it lurch past. Ten bits keep a strip
+     * usable - eight would be 2.8 pixels of a 720 pixel field.
+     */
+    const val SMOOTH_TWEEN = 6
+
+    /**
      * Picks the layout for the given element.
      * @param rotationDynamic whether the angle is evaluated per update
      * @param positionDynamic whether the offset is evaluated per update
+     * @param rateSmooth whether the element wants the rate carrying layout (a tweened rotation)
+     * @param valueSmooth whether `clip-fill` is tweened between updates
+     * @param tweenSmooth whether a content scroll is tweened between updates (two known endpoints)
      * @return layout
      */
-    fun of(rotationDynamic: Boolean, positionDynamic: Boolean) = when {
+    fun of(
+        rotationDynamic: Boolean,
+        positionDynamic: Boolean,
+        rateSmooth: Boolean,
+        valueSmooth: Boolean,
+        tweenSmooth: Boolean = false,
+        rotationWide: Boolean = false
+    ) = when {
+        // A tweened angle long enough to need it takes the eight bit payload's much longer ramp.
+        rotationWide -> SMOOTH_VALUE
+        tweenSmooth -> SMOOTH_TWEEN
+        rateSmooth -> SMOOTH_ROTATION
+        valueSmooth -> SMOOTH_VALUE
         rotationDynamic && positionDynamic -> ROTATION_POSITION
         rotationDynamic -> ROTATION
         positionDynamic -> POSITION
         else -> NONE
     }
+
+    /**
+     * Picks the layout for the given element.
+     * @param rotationDynamic whether the angle is evaluated per update
+     * @param positionDynamic whether the offset is evaluated per update
+     * @return layout
+     */
+    fun of(rotationDynamic: Boolean, positionDynamic: Boolean) =
+        of(rotationDynamic, positionDynamic, false, false)
 }

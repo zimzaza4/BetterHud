@@ -22,6 +22,13 @@ interface ImageLayout : HudLayout<ImageElement> {
     val reversed: Boolean
     val clearListener: Boolean
 
+    /**
+     * Where the element turns around, in its own pixels from the centre. Absent means the centre itself,
+     * so `[-60, 0]` on a 120 wide element turns it around its left edge - the tail of an arrow.
+     */
+    val rotationAnchorX: Double get() = 0.0
+    val rotationAnchorY: Double get() = 0.0
+
     fun identifier(shader: HudShader, ascent: Int, fileName: String): HudLayout.Identifier {
         return ImageIdentifier(
             ShaderGroup(shader, fileName, ascent),
@@ -80,6 +87,8 @@ interface ImageLayout : HudLayout<ImageElement> {
             PlaceholderManagerImpl.find(it, this).assertNumber("this placeholder is not a number: $it")
         }
         override val reversed: Boolean = yamlObject.getAsBoolean("reversed", false)
+        override val rotationAnchorX: Double = yamlObject.rotationAnchorAt(0) ?: 0.0
+        override val rotationAnchorY: Double = yamlObject.rotationAnchorAt(1) ?: 0.0
         override val clearListener: Boolean = yamlObject.getAsBoolean("clear-listener", false)
     }
 }

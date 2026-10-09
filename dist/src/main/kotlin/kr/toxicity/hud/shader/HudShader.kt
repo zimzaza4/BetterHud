@@ -37,21 +37,66 @@ data class HudShader(
     // rotate around different points.
     val rotationAnchorX: Double = 0.0,
     val rotationAnchorY: Double = 0.0,
+    // The custom clip region (`clip-rect`), the tween settings (`smooth`) and a placeholder driven
+    // content scroll (`scroll`). Null unless the config asks for them, so an element which predates
+    // them generates the very same case body.
+    val clip: ClipRegion? = null,
+    val smooth: SmoothConfig? = null,
+    val scroll: ScrollConfig? = null,
 ) : Comparable<HudShader> {
+
+    /**
+     * Whether the payload carries a tweened value: a filling region walks from the value it had to
+     * the new one while the client keeps drawing.
+     */
+    val valueSmooth: Boolean
+        get() = smooth != null && clip != null && clip.axis != ClipRegion.NONE
+
+    /**
+     * Whether the payload carries a tweened angle together with its rate.
+     */
+    val rotationSmooth: Boolean
+        get() = smooth != null && smooth.omegaScale > 0.0 && rotationDynamic
+
+    /**
+     * Whether the payload carries a tweened angle as two known endpoints instead of a rate, so a turn which
+     * comes to a stop lands on its endpoint rather than overshooting the one it was heading for.
+     */
+    val rotationTween: Boolean
+        get() = smooth != null && smooth.omegaScale <= 0.0 && rotationDynamic
+
+    /**
+     * Whether that tween is long enough to need the eight bit payload. Its tick counts to 240 where the four
+     * bit one counts to 16, and a continued ramp is off by the part of its step the ramp has not covered - so
+     * a longer ramp is the only way a fast turn stops showing that error.
+     */
+    val rotationWide: Boolean
+        get() = rotationTween && smooth!!.duration > ScrollTween.WINDOW
+
+    /**
+     * Whether the payload carries a scrolling content offset and its rate.
+     */
+    val scrollSmooth: Boolean
+        get() = smooth != null && scroll != null
 
     /**
      * Whether the case body emits the transform block: everything below [property] in [ShaderBody].
      * An element which neither turns, nor takes a payload, nor clips must not be split by those fields.
      */
     val transforms: Boolean
-        get() = rotationDynamic || positionDynamic || rotationDegree != 0.0 || clipOuter > 0.0
+        get() = rotationDynamic || positionDynamic || rotationDegree != 0.0 || clipOuter > 0.0 ||
+            clip != null || scroll != null
 
     /**
      * Whether the vertex shader turns (or clips) this element around its own centre.
      * Only then does a tile of a cut image have to be told where that centre is.
+     *
+     * A clip region needs this just as much as a rotation does: a long strip which is cut into tiles
+     * would otherwise measure the region from each tile's own centre, so every tile would show its own
+     * copy of the window instead of one window across the whole picture.
      */
     val pivotsAroundElementCenter: Boolean
-        get() = rotationDynamic || rotationDegree != 0.0 || clipOuter > 0.0
+        get() = rotationDynamic || rotationDegree != 0.0 || clipOuter > 0.0 || clip != null || scroll != null
 
     override fun compareTo(other: HudShader): Int {
         var result = gui.compareTo(other.gui)
@@ -66,6 +111,14 @@ data class HudShader(
         result = opacity.compareTo(other.opacity)
         if (result != 0) return result
         result = property.compareTo(other.property)
+        if (result != 0) return result
+        // A custom region or tween settings reach the body for every element which sets them, so they
+        // are compared before the early return below (which only skips the transform block).
+        result = compareValues(clip, other.clip)
+        if (result != 0) return result
+        result = compareValues(smooth, other.smooth)
+        if (result != 0) return result
+        result = compareValues(scroll, other.scroll)
         if (result != 0) return result
         if (!transforms && !other.transforms) return 0
         result = rotationDynamic.compareTo(other.rotationDynamic)
@@ -114,6 +167,9 @@ data class HudShader(
         result = 31 * result + (outline != 0).hashCode()
         result = 31 * result + opacity.hashCode()
         result = 31 * result + property
+        result = 31 * result + (clip?.hashCode() ?: 0)
+        result = 31 * result + (smooth?.hashCode() ?: 0)
+        result = 31 * result + (scroll?.hashCode() ?: 0)
         if (!transforms) return result
         result = 31 * result + rotationDynamic.hashCode()
         result = 31 * result + positionDynamic.hashCode()
