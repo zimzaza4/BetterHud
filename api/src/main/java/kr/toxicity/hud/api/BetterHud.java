@@ -1,6 +1,7 @@
 package kr.toxicity.hud.api;
 
 import kr.toxicity.command.BetterCommandSource;
+import kr.toxicity.hud.api.hud.HudViewOption;
 import kr.toxicity.hud.api.manager.*;
 import kr.toxicity.hud.api.plugin.ReloadFlagType;
 import kr.toxicity.hud.api.plugin.ReloadInfo;
@@ -127,6 +128,29 @@ public interface BetterHud {
      */
     default void mountConfigFolder(@NotNull File folder) {
         throw new UnsupportedOperationException("This BetterHud implementation does not support mounting config folders.");
+    }
+
+    /**
+     * Sets who decides how a hud looks for a player: whose data it shows and which of its entries
+     * that player does not see.
+     * <p>
+     * This is what lets a plugin sync a hud to an observer: mount the hud the watched player has
+     * for whoever watches him, and answer {@link HudViewOption#dataOf} with the watched player
+     * there. The option is asked on every update and survives a reload, so it only has to be set
+     * once (until BetterHud is disabled or another plugin replaces it).
+     * @param option option, or null to reset to {@link HudViewOption#SELF}
+     * @see HudViewOption
+     */
+    default void setHudViewOption(@Nullable HudViewOption option) {
+        throw new UnsupportedOperationException("This BetterHud implementation does not support hud view options.");
+    }
+
+    /**
+     * Gets the option set by {@link #setHudViewOption(HudViewOption)}, or {@link HudViewOption#SELF}.
+     * @return option
+     */
+    default @NotNull HudViewOption getHudViewOption() {
+        return HudViewOption.SELF;
     }
 
     /**

@@ -11,11 +11,13 @@ import kr.toxicity.hud.configuration.HudConfiguration
 import kr.toxicity.hud.location.PixelLocation
 import kr.toxicity.hud.animation.AnimationType
 import kr.toxicity.hud.manager.ConfigManagerImpl
+import kr.toxicity.hud.manager.HudViewManager
 import kr.toxicity.hud.manager.LayoutManager
 import kr.toxicity.hud.pack.PackGenerator
 import kr.toxicity.hud.location.GuiLocation
 import kr.toxicity.hud.manager.EncodeManager
 import kr.toxicity.hud.placeholder.PlaceholderSource
+import kr.toxicity.hud.player.SubjectHudPlayer
 import kr.toxicity.hud.resource.GlobalResource
 import kr.toxicity.hud.util.*
 
@@ -52,6 +54,7 @@ class HudImpl(
         }
         val pixel = yamlObject["pixel"]?.toPixelLocation() ?: PixelLocation.zero
         HudAnimation(
+            s,
             layout.animation.type,
             layout.animation.location.map {
                 HudParser(
@@ -91,14 +94,24 @@ class HudImpl(
     private val conditions = section.toConditions(this) build UpdateEvent.EMPTY
 
     override fun createRenderer(player: HudPlayer): HudComponentSupplier<Hud> {
-        val map = elements.map {
-            it.animationType to it.elements.map { p ->
-                runByTick(tick, { player.tick }, p.getComponent(player))
+        // The managing plugin may name another player as this hud's data owner (an observer seeing
+        // the watched player's values) - the tick, the output and the hidden entries stay the
+        // viewer's. Only huds which actually switch data are wrapped: the wrapper is a different
+        // object, and BetterHud keys its interpolation state by player identity (a hud wrapped for
+        // nothing would lose every tween it has).
+        val renderPlayer = if (HudViewManager.usesSubject(this)) SubjectHudPlayer(this, player) else player
+        val map = elements.map { animation ->
+            animation to animation.elements.map { p ->
+                runByTick(tick, { renderPlayer.tick }, p.getComponent(renderPlayer))
             }
         }
         return HudComponentSupplier.of(this) {
-            if (conditions(player)) map.map { (type, element) ->
-                type.choose(element, player.tick)()
+            if (conditions(renderPlayer)) {
+                val hidden = HudViewManager.hiddenEntriesOf(this, player)
+                map.mapNotNull { (animation, runners) ->
+                    if (animation.id in hidden) null
+                    else animation.animationType.choose(runners, renderPlayer.tick)()
+                }
             } else emptyList()
         }
     }
@@ -119,7 +132,9 @@ class HudImpl(
 
     override fun isDefault(): Boolean = default
 
+    /** One entry of `layouts`: the key it is declared under (what `hiddenEntriesOf` refers to). */
     private class HudAnimation(
+        val id: String,
         val animationType: AnimationType,
         val elements: List<HudParser>
     )

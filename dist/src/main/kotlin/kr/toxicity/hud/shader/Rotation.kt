@@ -199,6 +199,12 @@ enum class PayloadOwner(val kind: Int) {
             // The eight bit payload's longer ramp, for an angle which needs it.
             rotationWide -> ROTATION_WIDE
             // A scroll and a narrow angle tween share SMOOTH_TWEEN; the scroll has always owned it.
+            // A scroll and a per update angle can share one glyph: MIXED spends the 8 bit angle on
+            // the red channel and the 6/6 tweened value on the rest, and the case body routes that
+            // value into `bhScrollV` whenever the element has a scroll. Taking SCROLL here instead
+            // would freeze the angle at its packed-at-build-time value, which is what an element
+            // like a rotating scroll glow needs both of.
+            rotationDynamic && scrollSmooth -> MIXED
             scrollSmooth -> SCROLL
             // A region which fills while the element turns takes the one layout carrying both, at the cost
             // of stepping the angle rather than tweening it.

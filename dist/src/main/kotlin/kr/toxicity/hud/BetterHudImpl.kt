@@ -3,6 +3,7 @@ package kr.toxicity.hud
 import kr.toxicity.hud.api.BetterHud
 import kr.toxicity.hud.api.BetterHudBootstrap
 import kr.toxicity.hud.api.BetterHudDependency
+import kr.toxicity.hud.api.hud.HudViewOption
 import kr.toxicity.hud.api.manager.*
 import kr.toxicity.hud.api.plugin.ReloadInfo
 import kr.toxicity.hud.api.plugin.ReloadState
@@ -162,6 +163,8 @@ class BetterHudImpl(val bootstrap: BetterHudBootstrap) : BetterHud {
         managers.forEach {
             it.end()
         }
+        MountManager.clear()
+        HudViewManager.clear()
         BOOTSTRAP.endMetrics()
         DatabaseManagerImpl.currentDatabase.close()
     }
@@ -191,6 +194,12 @@ class BetterHudImpl(val bootstrap: BetterHudBootstrap) : BetterHud {
     override fun unmountConfigFolder(folder: File) {
         if (MountManager.unmount(folder)) debug(ConfigManager.DebugLevel.MANAGER, "Unmounted config folder: ${folder.absolutePath}")
     }
+
+    override fun setHudViewOption(option: HudViewOption?) {
+        HudViewManager.set(option)
+    }
+
+    override fun getHudViewOption(): HudViewOption = HudViewManager.current
 
     private fun loadAssets(prefix: String, consumer: (String, InputStream) -> Unit) {
         JarFile(bootstrap.jarFile()).use {

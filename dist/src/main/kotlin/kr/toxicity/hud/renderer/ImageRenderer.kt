@@ -150,6 +150,25 @@ class ImageRenderer(
                             base.applyMixedPayload(
                                 degree, state.from(), state.to(), RatePayload.rampTickOf(fallbackTick)
                             )
+                        } else if (scrollSmooth != null && scrollGetter != null && scrolling != null && rotationGetter != null) {
+                            // A scroll can carry the angle as well: the value is normalized exactly like the
+                            // SCROLL owner does below, so the case body routes it into `bhScrollV` the same way.
+                            val degree = (rotationGetter.value(target) as? Number)?.toDouble() ?: 0.0
+                            val pixels = (scrollGetter.value(target) as? Number)?.toDouble() ?: 0.0
+                            val state = scrollStates!!.getOrPut(target) { ScrollTween() }.step(
+                                RatePayload.normalized(pixels, scrolling.scale * 2.0, 0.0),
+                                time240,
+                                scrollSmooth.duration,
+                                63,
+                                scrollSmooth.duration > tick,
+                                scrollSmooth.easing
+                            )
+                            base.applyMixedPayload(
+                                degree,
+                                ScrollTween.wrap01(state.from()),
+                                ScrollTween.wrap01(state.to()),
+                                RatePayload.rampTickOf(fallbackTick)
+                            )
                         } else base applyColor colorApply(target)
                         PayloadOwner.ROTATION_WIDE -> if (rotationWide != null && rotationGetter != null) {
                             val degree = (rotationGetter.value(target) as? Number)?.toDouble() ?: 0.0
