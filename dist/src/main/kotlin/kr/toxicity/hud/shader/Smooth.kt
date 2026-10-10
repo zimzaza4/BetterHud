@@ -77,6 +77,19 @@ data class ClipRegion(
          * way round.
          */
         const val AXIS_PIE = 5
+
+        // How `clip-fill.value` is read. AUTO is the historical guess - above one is a percentage - which
+        // cannot tell `1` (one percent) from `1` (the whole region), so a value sweeping through (0, 1]
+        // jumps to the tops of the range whenever a sample lands in it.
+        const val UNIT_AUTO = 0
+        const val UNIT_PERCENT = 1
+        const val UNIT_FRACTION = 2
+
+        fun unitOf(name: String): Int = when (name.lowercase()) {
+            "percent", "%" -> UNIT_PERCENT
+            "fraction", "ratio" -> UNIT_FRACTION
+            else -> UNIT_AUTO
+        }
     }
 
     override fun compareTo(other: ClipRegion): Int = compareValuesBy(
@@ -170,12 +183,19 @@ class SmoothValue(
     private var sentTick: Int = 0
 ) {
     /**
-     * Moves towards [target]. [tick] is the world time in ticks, [duration] the tween length in ticks
-     * and [quantize] the payload's step count (255 for the colour payload).
+     * Moves towards [target]. [tick] is the world time in ticks, [duration] the tween length in ticks and
+     * [quantize] the payload's step count (255 for the colour payload). [easing] has to be the curve the
+     * shader renders, or the point a retarget starts from is not the one being drawn.
      */
-    fun step(target: Double, tick: Int, duration: Double, quantize: Int): SmoothValue {
+    fun step(
+        target: Double,
+        tick: Int,
+        duration: Double,
+        quantize: Int,
+        easing: Int = SmoothConfig.SMOOTHSTEP
+    ): SmoothValue {
         if (target != to) {
-            from = quantize(curveAt(tick, duration), quantize)
+            from = quantize(curveAt(tick, duration, easing), quantize)
             to = quantize(target, quantize)
             sentTick = tick
         } else if (duration <= 0.0 || wrapped(tick - sentTick) >= duration) {
@@ -189,17 +209,15 @@ class SmoothValue(
     /**
      * The value which is visible right now - used on the server side to retarget without a jump.
      */
-    fun curveAt(tick: Int, duration: Double): Double {
+    fun curveAt(tick: Int, duration: Double, easing: Int = SmoothConfig.SMOOTHSTEP): Double {
         if (duration <= 0.0) return to
         val elapsed = wrapped(tick - sentTick).coerceAtLeast(0)
-        return from + (to - from) * ease((elapsed / duration).coerceIn(0.0, 1.0))
+        return from + (to - from) * SmoothConfig.ease((elapsed / duration).coerceIn(0.0, 1.0), easing)
     }
 
     fun from() = from
     fun to() = to
     fun tick() = sentTick
-
-    private fun ease(t: Double) = t * t * (3.0 - 2.0 * t)
 
     companion object {
         /**

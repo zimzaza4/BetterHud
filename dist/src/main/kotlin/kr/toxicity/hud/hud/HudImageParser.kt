@@ -10,7 +10,9 @@ import kr.toxicity.hud.location.PixelLocation
 import kr.toxicity.hud.layout.ImageLayout
 import kr.toxicity.hud.renderer.ImageRenderer
 import kr.toxicity.hud.location.GuiLocation
+import kr.toxicity.hud.shader.ClipRegion
 import kr.toxicity.hud.shader.HudShader
+import kr.toxicity.hud.shader.PayloadOwner
 import kr.toxicity.hud.shader.Rotation
 import kr.toxicity.hud.util.*
 import net.kyori.adventure.text.Component
@@ -44,15 +46,39 @@ class HudImageParser(parent: HudImpl, private val imageLayout: ImageLayout, gui:
             imageLayout.clipOriginX != null && imageLayout.clipOriginY != null,
             // `clip-rect` is written in element pixels from the top-left, and the shader gets there by
             // adding the element's half to its centre - so the rectangle travels verbatim.
-            clip = imageLayout.clip?.copy(
-                elementHalfX = (rotationSize?.width ?: 0) * rotationScale / 2.0,
-                elementHalfY = (rotationSize?.height ?: 0) * rotationScale / 2.0
-            ),
+            clip = imageLayout.clip?.let { region ->
+                // A region without a value cannot walk its boundary, so it stays the static rectangle it
+                // already is rather than letting the case think a payload is coming for it.
+                region.copy(
+                    axis = if (region.axis != ClipRegion.NONE && imageLayout.clipFillValue == null) {
+                        ClipRegion.NONE
+                    } else region.axis,
+                    elementHalfX = (rotationSize?.width ?: 0) * rotationScale / 2.0,
+                    elementHalfY = (rotationSize?.height ?: 0) * rotationScale / 2.0
+                )
+            },
             smooth = imageLayout.smooth,
-            scroll = imageLayout.scroll,
+            // The same for a scroll: without its placeholder there is nothing to send.
+            scroll = imageLayout.scroll?.takeIf { imageLayout.scrollValue != null },
             rotationAnchorX = imageLayout.rotationAnchorX,
             rotationAnchorY = imageLayout.rotationAnchorY
         )
+        // One payload carries one value, so an element which asked for two of them gets the one the case
+        // declares and loses the other - quietly, unless it is said here. An element which asked for no
+        // tween loses nothing and is not reported: its region simply steps, as it always has.
+        val region = shader.clip
+        val losingRegion = region != null && region.axis != ClipRegion.NONE && !shader.fillsRegion
+        val dropped = buildList {
+            if (shader.rotationDynamic && shader.payloadOwner !in ROTATING_OWNERS) add("rotation")
+            if (imageLayout.smooth != null && losingRegion) add("clip-fill")
+            if (shader.scrollSmooth && shader.payloadOwner != PayloadOwner.SCROLL) add("scroll")
+        }
+        if (dropped.isNotEmpty()) {
+            warn(
+                "${imageLayout.source.id}: its payload carries ${shader.payloadOwner.name.lowercase()},",
+                "so ${dropped.joinToString()} cannot be tweened on this element"
+            )
+        }
         val negativeSpace = parent.getOrCreateSpace(-1)
         fun ImageElement.toComponent(parentComponent: ImageComponent? = null): ImageComponent {
             val list = ArrayList<PixelComponent>()
@@ -104,6 +130,7 @@ class HudImageParser(parent: HudImpl, private val imageLayout: ImageLayout, gui:
             })
         }
         val renderer = ImageRenderer(
+            shader,
             imageLayout,
             try {
                 imageLayout.source.toComponent()
@@ -118,4 +145,15 @@ class HudImageParser(parent: HudImpl, private val imageLayout: ImageLayout, gui:
 
     override fun render(player: HudPlayer): (Long) -> PixelComponent = chars.second(player)
 
+    private companion object {
+        /** The owners which drive the angle, whatever else they carry. */
+        val ROTATING_OWNERS = setOf(
+            PayloadOwner.ROTATION_WIDE,
+            PayloadOwner.ROTATION_TWEEN,
+            PayloadOwner.ROTATION_RATE,
+            PayloadOwner.ROTATION,
+            PayloadOwner.MIXED,
+            PayloadOwner.TRANSFORM
+        )
+    }
 }

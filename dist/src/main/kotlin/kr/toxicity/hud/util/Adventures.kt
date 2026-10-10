@@ -370,6 +370,26 @@ fun PixelComponent.applyRatePayload(
         it.component.component.color(TextColor.color(packed shr 16 and 0xFF, packed shr 8 and 0xFF, packed and 0xFF))
     }
 }
+
+/**
+ * Replaces this component's colour with the mixed payload (`bhPayload = 7`): an eight bit angle in red and a
+ * tweened value in the sixteen bits below it - six of `from`, six of `to` and the four bit tick they were
+ * sent for. It is the one layout which carries a turning element and a moving region at once.
+ *
+ * The value is on a 64 step grid, so the caller has to quantize its own state to it: the shader reads the
+ * endpoint back as the grid point the server packed, and the next update has to start from that one.
+ * @param degree the angle in degrees, wrapped into one turn
+ * @param from value the ramp starts from, 0..1
+ * @param to value it walks to, 0..1
+ * @param tick world game time in ticks, reduced modulo 16 the way the shader reads it back
+ */
+fun PixelComponent.applyMixedPayload(degree: Double, from: Double, to: Double, tick: Int): PixelComponent {
+    val bits = RatePayload.mixedBits(degree, from, to, tick)
+    return copy().also {
+        it.component.component.color(TextColor.color(bits shr 16 and 0xFF, bits shr 8 and 0xFF, bits and 0xFF))
+    }
+}
+
 infix fun PixelComponent.shadow(shadow: Int): PixelComponent = apply {
     component shadow shadow
 }

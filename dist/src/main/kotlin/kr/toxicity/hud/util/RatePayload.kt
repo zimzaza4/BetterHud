@@ -143,4 +143,25 @@ object RatePayload {
      * [tickOf]'s modulo 32 nor [kr.toxicity.hud.shader.SmoothValue.tickOf]'s modulo 240.
      */
     fun rampTickOf(worldTime: Long): Int = (worldTime and 15L).toInt()
+
+    /**
+     * The mixed layout (`bhPayload = 7`): an eight bit angle, then a six bit `from`, a six bit `to` and the
+     * four bit tick they were sent for. The one layout carrying a turning element and a moving region at
+     * once, which is what the value's sixty-four steps cost.
+     */
+    fun mixedBits(degree: Double, from: Double, to: Double, tick: Int): Int {
+        val angle = ((degree / 360.0).mod(1.0) * 255.0).roundToInt() and 0xFF
+        val start = (from.coerceIn(0.0, 1.0) * 63.0).roundToInt().coerceIn(0, 63)
+        val end = (to.coerceIn(0.0, 1.0) * 63.0).roundToInt().coerceIn(0, 63)
+        return (angle shl 16) or (start shl 10) or (end shl 4) or (tick and 15)
+    }
+
+    /** The angle, as the fraction of a turn the shader multiplies by two pi. */
+    fun decodedMixedDegree(bits: Int): Double = (bits shr 16 and 0xFF).toDouble() / 255.0
+
+    fun decodedMixedFrom(bits: Int): Double = (bits shr 10 and 0x3F).toDouble() / 63.0
+
+    fun decodedMixedTo(bits: Int): Double = (bits shr 4 and 0x3F).toDouble() / 63.0
+
+    fun decodedMixedTick(bits: Int): Int = bits and 15
 }

@@ -98,6 +98,26 @@ data class HudShader(
     val pivotsAroundElementCenter: Boolean
         get() = rotationDynamic || rotationDegree != 0.0 || clipOuter > 0.0 || clip != null || scroll != null
 
+    /** Which value owns the payload, and the layout it takes; see [PayloadOwner]. */
+    val payloadOwner: PayloadOwner
+        get() = PayloadOwner.of(
+            rotationDynamic,
+            positionDynamic,
+            rotationSmooth,
+            valueSmooth,
+            scrollSmooth,
+            rotationTween,
+            rotationWide
+        )
+
+    val payloadKind: Int
+        get() = payloadOwner.kind
+
+    /** Whether `clip-fill` can move its boundary, or the payload belongs to something else. */
+    val fillsRegion: Boolean
+        get() = clip != null && clip.axis != ClipRegion.NONE &&
+            (payloadOwner == PayloadOwner.FILL || payloadOwner == PayloadOwner.MIXED)
+
     override fun compareTo(other: HudShader): Int {
         var result = gui.compareTo(other.gui)
         if (result != 0) return result

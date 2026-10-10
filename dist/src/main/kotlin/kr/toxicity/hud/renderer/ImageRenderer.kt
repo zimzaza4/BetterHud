@@ -9,6 +9,8 @@ import kr.toxicity.hud.manager.PlaceholderManagerImpl
 import kr.toxicity.hud.manager.PlayerManagerImpl
 import kr.toxicity.hud.shader.AngleRate
 import kr.toxicity.hud.shader.ClipRegion
+import kr.toxicity.hud.shader.HudShader
+import kr.toxicity.hud.shader.PayloadOwner
 import kr.toxicity.hud.shader.Rotation
 import kr.toxicity.hud.shader.ScrollTween
 import kr.toxicity.hud.shader.SmoothValue
@@ -19,9 +21,13 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 class ImageRenderer(
+    // The case owns the payload's meaning: packing anything but the value it was told to decode would
+    // hand the client bytes it reads with the wrong arithmetic.
+    private val shader: HudShader,
     layout: ImageLayout,
     component: ImageComponent
 ) : ImageLayout by layout, HudRenderer {
+    private val payloadOwner = shader.payloadOwner
     private val followHudPlayer = follow?.let {
         PlaceholderManagerImpl.find(it, this).assertString("This placeholder is not a string: $it")
     }
@@ -106,8 +112,11 @@ class ImageRenderer(
                     // a five bit one it reduces by 32 - and 240 is not a multiple of 32.
                     val time240 = SmoothValue.tickOf(fallbackTick)
                     val rateTick = RatePayload.tickOf(fallbackTick)
-                    when {
-                        scrollSmooth != null && scrollGetter != null && scrolling != null -> {
+                    // A getter is built for every event and can be absent for an update (a placeholder which
+                    // does not apply to it). The case still decodes the layout its owner names, so an arm
+                    // without its value keeps the plain colour - the guard the dispatch used to carry.
+                    when (payloadOwner) {
+                        PayloadOwner.SCROLL -> if (scrollSmooth != null && scrollGetter != null && scrolling != null) {
                             val pixels = (scrollGetter.value(target) as? Number)?.toDouble() ?: 0.0
                             // The shape follows the element's own update: a ramp it can contain is left to
                             // finish (an input sampled every few ticks), one which outlives it is continued.
@@ -124,16 +133,25 @@ class ImageRenderer(
                                 ScrollTween.wrap01(state.to()),
                                 state.tick()
                             )
-                        }
-                        fillSmooth != null && fillGetter != null -> {
+                        } else base applyColor colorApply(target)
+                        PayloadOwner.FILL -> if (fillSmooth != null && fillGetter != null) {
                             val raw = (fillGetter.value(target) as? Number)?.toDouble() ?: 0.0
-                            // Percentages are what placeholders usually carry, so anything above 1 is read as one.
-                            val value = if (raw > 1.0) raw / 100.0 else raw
                             val state = fillStates!!.getOrPut(target) { SmoothValue() }
-                                .step(value, time240, fillSmooth.duration, 255)
+                                .step(fillValueOf(raw), time240, fillSmooth.duration, 255, fillSmooth.easing)
                             base.applySmoothValuePayload(state.from(), state.to(), state.tick())
-                        }
-                        rotationWide != null && rotationGetter != null -> {
+                        } else base applyColor colorApply(target)
+                        PayloadOwner.MIXED -> if (fillSmooth != null && fillGetter != null && rotationGetter != null) {
+                            // The angle is stepped, once per element update; the value keeps its tween, on the
+                            // 64 step grid the sixteen bits below the angle allow.
+                            val degree = (rotationGetter.value(target) as? Number)?.toDouble() ?: 0.0
+                            val raw = (fillGetter.value(target) as? Number)?.toDouble() ?: 0.0
+                            val state = fillStates!!.getOrPut(target) { SmoothValue() }
+                                .step(fillValueOf(raw), time240, fillSmooth.duration, 63, fillSmooth.easing)
+                            base.applyMixedPayload(
+                                degree, state.from(), state.to(), RatePayload.rampTickOf(fallbackTick)
+                            )
+                        } else base applyColor colorApply(target)
+                        PayloadOwner.ROTATION_WIDE -> if (rotationWide != null && rotationGetter != null) {
                             val degree = (rotationGetter.value(target) as? Number)?.toDouble() ?: 0.0
                             // A turn too fast for the four bit tick's ramp: the eight bit payload's tick
                             // counts to 240, so the ramp can cover the part of the step a continued one
@@ -152,8 +170,8 @@ class ImageRenderer(
                                 ScrollTween.wrap01(state.to()),
                                 state.tick() and 255
                             )
-                        }
-                        rotationTween != null && rotationGetter != null -> {
+                        } else base applyColor colorApply(target)
+                        PayloadOwner.ROTATION_TWEEN -> if (rotationTween != null && rotationGetter != null) {
                             val degree = (rotationGetter.value(target) as? Number)?.toDouble() ?: 0.0
                             // The angle is a scalar with its own 360 degree period, so it is normalized and
                             // the tween takes the short way round a whole turn, exactly as a scroll does.
@@ -170,8 +188,8 @@ class ImageRenderer(
                                 ScrollTween.wrap01(state.to()),
                                 state.tick()
                             )
-                        }
-                        rotationSmooth != null && rotationGetter != null -> {
+                        } else base applyColor colorApply(target)
+                        PayloadOwner.ROTATION_RATE -> if (rotationSmooth != null && rotationGetter != null) {
                             val degree = (rotationGetter.value(target) as? Number)?.toDouble() ?: 0.0
                             // The tracker works in degrees; the payload's rate field is scaled in radians
                             // per tick (`bhOmegaScale`), so the rate is converted before it is packed.
@@ -179,8 +197,8 @@ class ImageRenderer(
                             base.applyRatePayload(
                                 degree, Math.toRadians(rate), rateTick, 360.0, rotationSmooth.omegaScale
                             )
-                        }
-                        rotationGetter != null || positionXGetter != null -> base.applyTransformPayload(
+                        } else base applyColor colorApply(target)
+                        PayloadOwner.TRANSFORM, PayloadOwner.ROTATION, PayloadOwner.POSITION -> base.applyTransformPayload(
                             rotationGetter != null,
                             positionXGetter != null,
                             (rotationGetter?.value(target) as? Number)?.toDouble() ?: 0.0,
@@ -188,7 +206,7 @@ class ImageRenderer(
                             (positionYGetter?.value(target) as? Number)?.toInt() ?: 0
                         )
                         // applyColor is copy-based now: use its result, an in-place call would be a no-op.
-                        else -> base applyColor colorApply(target)
+                        PayloadOwner.NONE -> base applyColor colorApply(target)
                     }
                 }
             } else {
@@ -199,4 +217,14 @@ class ImageRenderer(
     }
 
     fun max() = component.max
+
+    /**
+     * `clip-fill.value` as the 0..1 fraction the shader's boundary reads. Anything above one is a percentage
+     * unless the config named the unit, which is what `clip-fill.unit` is for.
+     */
+    private fun fillValueOf(raw: Double): Double = when (clipFillUnit) {
+        ClipRegion.UNIT_PERCENT -> raw / 100.0
+        ClipRegion.UNIT_FRACTION -> raw
+        else -> if (raw > 1.0) raw / 100.0 else raw
+    }.coerceIn(0.0, 1.0)
 }

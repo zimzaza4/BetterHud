@@ -265,6 +265,19 @@ void main() {
             } else {
                 bhValue = mix(bhFrom, bhTo, bhEase(bhT, bhSmoothEase));
             }
+        } else if (bhPayload == 7) {
+            // red = an 8 bit angle; green/blue = a 6 bit `from`, a 6 bit `to` and the 4 bit tick they were
+            // sent for. The only layout carrying a turning element and a moving region at once - the angle
+            // is stepped rather than tweened, since the sixteen bits left over are all the tween gets.
+            bhRot = Color.r * 6.283185307;
+            int bhMBits = int(Color.g * 255.0 + 0.5) * 256 + int(Color.b * 255.0 + 0.5);
+            float bhMElapsed = bhAge(bhMBits & 15, 16.0);
+            float bhMT = bhSmoothDur <= 0.0 ? 1.0 : clamp(bhMElapsed / bhSmoothDur, 0.0, 1.0);
+            bhValue = mix(
+                float((bhMBits >> 10) & 0x3F) / 63.0,
+                float((bhMBits >> 4) & 0x3F) / 63.0,
+                bhEase(bhMT, bhSmoothEase)
+            );
         } else if (bhPayload == 5) {
             // red/green = an 11 bit value and a 5 bit tick, blue = the rate. A rotation reads the value as
             // an angle and the rate as radians per tick; a content scroll reads both as a position, which
@@ -331,17 +344,27 @@ void main() {
             bhOfs = vec2(bhCa * bhOfs.x - bhSa * bhOfs.y, bhSa * bhOfs.x + bhCa * bhOfs.y);
         }
         vec2 bhD = pos.xy - bhPivot;
-        pos.xy = bhPivot + vec2(bhCa * bhD.x - bhSa * bhD.y, bhSa * bhD.x + bhCa * bhD.y) + bhOfs + bhScrollV;
+        // The scroll belongs to the element's own frame: a rotated window slides its content along its own
+        // axis rather than the screen's. bhD stays free of it, so the clip window keeps its place while the
+        // content passes behind it.
+        vec2 bhScrollR = vec2(bhCa * bhScrollV.x - bhSa * bhScrollV.y, bhSa * bhScrollV.x + bhCa * bhScrollV.y);
+        pos.xy = bhPivot + vec2(bhCa * bhD.x - bhSa * bhD.y, bhSa * bhD.x + bhCa * bhD.y) + bhOfs + bhScrollR;
         vec2 bhClipC = bhClipHasOrigin ? bhClipOrigin : bhPivot;
         bhClip = vec4(pos.xy - bhClipC, bhClipIn, bhClipOut);
         // Custom clip region: a rectangle in the element's own box, `bhLocalV` measured from its top-left
-        // corner (0 .. 2 * bhElemHalf across). The default reading is a fixed window: it is built from
-        // bhD, the vertex before the rotation and the scroll moved it, so the rectangle stays exactly
-        // where the element was placed and the content passes behind it - what a minimap or a compass
-        // window is. `clip-follow: content` builds it from pos instead, which makes the rectangle travel
-        // with the picture (and keeps bhPivot, the centre of the whole element, as its origin).
+        // corner (0 .. 2 * bhElemHalf across). `bhLocalV` is a vertex output, so the per-fragment reading
+        // is an affine function of where the fragment lands on screen: a uniform which moved the vertices
+        // (bhOfs, bhScrollV) cancels back out, and only the content - sampled wherever the vertices put
+        // it - really moves. So `base` (the default) is the placed frame, in which the rectangle keeps its
+        // place and the content passes behind it; `content` is the piece's own box (bhD), which travels
+        // with the picture as well. The placed frame is turned back by the element's own angle, or a
+        // rotated element would be cut diagonally by an axis-aligned rectangle instead of windowed along
+        // its own axes. At rotation 0 that turn is the identity: the compass and the scroll test, which
+        // are unrotated, keep the reading they have always had.
         if (bhFillOn) {
-            bhLocalV = (bhFillFollow ? pos.xy - bhPivot : bhD) + bhElemHalf;
+            vec2 bhBase = pos.xy - bhPivot;
+            vec2 bhBaseL = vec2(bhCa * bhBase.x + bhSa * bhBase.y, -bhSa * bhBase.x + bhCa * bhBase.y);
+            bhLocalV = (bhFillFollow ? bhD : bhBaseL) + bhElemHalf;
             vec2 bhMin = bhFillMin;
             vec2 bhMax = bhFillMax;
             if (bhFillAxis == 0 || bhFillAxis == 1) {
@@ -381,13 +404,15 @@ void main() {
                     clamp(bhValue, 0.0, 1.0) * 6.283185307 * (bhFillInvert ? -1.0 : 1.0));
             } else {
                 // A region which only clips - `clip-rect` without `clip-fill`: the fixed window a scrolling
-                // strip slides behind. Measured on the final position (`pos` already carries bhOfs and
-                // bhScrollV), so the window stays where the element was placed. `bhCs` cannot be used for
-                // this: the corner sign it recovers only works while every corner lands on a different side
-                // of half a texel, which a wide tiled picture does not, and the window would then be decided
-                // per tile - the band travelling with the picture.
+                // strip slides behind (see the note above the block). Turned back by the element's own
+                // angle, so a rotated strip is windowed along its own axes; `bhWinC` still comes from
+                // bhPivot, and so still leans on the corner sign `bhCs` (see the note at the top of the
+                // file for the 26.1+ corner). `clip-follow: content` measures bhD instead.
                 vec2 bhWinC = bhClipHasOrigin ? bhClipOrigin : bhPivot;
-                bhLocalV = (bhFillFollow ? bhD : pos.xy - bhWinC) + bhElemHalf;
+                vec2 bhWinD = pos.xy - bhWinC;
+                bhLocalV = (bhFillFollow
+                    ? bhD
+                    : vec2(bhCa * bhWinD.x + bhSa * bhWinD.y, -bhSa * bhWinD.x + bhCa * bhWinD.y)) + bhElemHalf;
                 bhRectV = vec4(bhMin, bhMax);
                 bhFillV = vec4(1.0, bhFillSoft, bhFillRadius, 0.0);
             }

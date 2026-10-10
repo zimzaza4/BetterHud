@@ -32,22 +32,27 @@ object ShaderBody {
         if (shader.layer != 0) body.add("    layer = ${shader.layer};")
         if (shader.outline != 0) body.add("    outline = true;")
         shader.smooth?.let {
-            // A scrolling element's payload carries a four bit tick, so a ramp longer than its window is one
-            // its client cannot measure. The other layouts carry a wider counter and keep their own length.
-            val duration = if (shader.scroll != null) it.duration.coerceIn(0.0, ScrollTween.WINDOW)
-            else it.duration
+            // A scrolling element's payload carries a four bit tick - and so does the mixed one - so a ramp
+            // longer than that window is one its client cannot measure. The other layouts carry a wider
+            // counter and keep their own length.
+            val fourBitTick = shader.scroll != null || shader.payloadOwner == PayloadOwner.MIXED
+            val duration = if (fourBitTick) it.duration.coerceIn(0.0, ScrollTween.WINDOW) else it.duration
             body.add("    bhSmoothDur = ${duration.toFloat()};")
             body.add("    bhSmoothEase = ${it.easing}.0;")
             if (it.omegaScale != 0.0) body.add("    bhOmegaScale = ${it.omegaScale.toFloat()};")
         }
         shader.clip?.let {
+            // A region which asked for a tween but lost the payload to another value has to go static, or its
+            // boundary would sit at zero and the element would disappear. An element without a tween has no
+            // payload to lose and keeps whatever its config asked for.
+            val driven = shader.fillsRegion || shader.smooth == null
             body.add("    bhFillOn = true;")
             body.add("    bhFillMin = vec2(${it.x.toFloat()}, ${it.y.toFloat()});")
             body.add("    bhFillMax = vec2(${(it.x + it.width).toFloat()}, ${(it.y + it.height).toFloat()});")
             if (it.radius != 0.0) body.add("    bhFillRadius = ${it.radius.toFloat()};")
             if (it.soft != 0.0) body.add("    bhFillSoft = ${it.soft.toFloat()};")
-            body.add("    bhFillAxis = ${it.axis};")
-            if (it.invert) body.add("    bhFillInvert = true;")
+            body.add("    bhFillAxis = ${if (driven) it.axis else ClipRegion.NONE};")
+            if (it.invert && driven) body.add("    bhFillInvert = true;")
             if (!it.followsContent) body.add("    bhFillFollow = false;")
             // The region is measured from the element's top-left, while the shader's pivot is its centre.
             body.add("    bhElemHalf = vec2(${it.elementHalfX.toFloat()}, ${it.elementHalfY.toFloat()});")
@@ -57,14 +62,6 @@ object ShaderBody {
             body.add("    bhValueUse = ${it.axis + 1};")
             body.add("    bhValueScale = ${it.scale.toFloat()};")
         }
-        val payload = PayloadKind.of(
-            shader.rotationDynamic,
-            shader.positionDynamic,
-            shader.rotationSmooth,
-            shader.valueSmooth,
-            shader.scrollSmooth || (shader.rotationTween && !shader.rotationWide),
-            shader.rotationWide
-        )
         if (shader.rotationWide) {
             // The eight bit payload drives the angle itself instead of a boundary or an offset.
             body.add("    bhValueRot = true;")
@@ -81,7 +78,7 @@ object ShaderBody {
                 body.add("    bhRotAnchor = vec2(${shader.rotationAnchorX.toFloat()}, ${shader.rotationAnchorY.toFloat()});")
                 body.add("#endif")
             }
-            body.add("    bhPayload = $payload;")
+            body.add("    bhPayload = ${shader.payloadKind};")
             // Rotate the payload offset together with the element (see HudLayout.positionInRotatedSpace).
             body.add("    bhRotateOffset = ${shader.positionInRotatedSpace};")
             if (shader.clipOuter > 0.0) {

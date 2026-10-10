@@ -177,6 +177,7 @@ class PopupLayout(
                 })
             }
             ImageRenderer(
+                imageShader,
                 target,
                 try {
                     target.source.toComponent()

@@ -77,6 +77,37 @@ class SmoothTest {
     }
 
     @Test
+    fun testTheMixedLayoutRoundTripsThroughTheShadersArithmetic() {
+        // The one layout carrying a turning element and a moving region at once, so its grid is coarser than
+        // the others: an eight bit angle over a sixty-four step value. Both sides have to agree on it, or the
+        // boundary steps on its own every update.
+        for (from in listOf(0.0, 0.25, 0.5, 1.0)) {
+            for (to in listOf(0.0, 0.5, 0.75, 1.0)) {
+                val bits = RatePayload.mixedBits(90.0, from, to, 11)
+                assertEquals(90.0 / 360.0, RatePayload.decodedMixedDegree(bits), 1.0 / 255.0)
+                assertEquals(from, RatePayload.decodedMixedFrom(bits), 1.0 / 63.0)
+                assertEquals(to, RatePayload.decodedMixedTo(bits), 1.0 / 63.0)
+                assertEquals(11, RatePayload.decodedMixedTick(bits))
+            }
+        }
+        // A full turn is the same picture, so the angle has to wrap rather than saturate.
+        assertEquals(0.0, RatePayload.decodedMixedDegree(RatePayload.mixedBits(360.0, 0.0, 0.0, 0)), 1e-9)
+        assertEquals(0.75, RatePayload.decodedMixedDegree(RatePayload.mixedBits(-90.0, 0.0, 0.0, 0)), 1.0 / 255.0)
+    }
+
+    @Test
+    fun testAFillTweenWalksTheEasingTheShaderRenders() {
+        // `bhEase` is the curve the client draws. A retarget has to start from the point that curve is at,
+        // so the server may not use a curve of its own - a filling bar with `easing: linear` was retargeted
+        // along a smoothstep and got pulled back on every update.
+        val linear = SmoothValue()
+            .step(1.0, tick = 0, duration = 8.0, quantize = 255, easing = SmoothConfig.LINEAR)
+        assertEquals(0.25, linear.curveAt(2, 8.0, SmoothConfig.LINEAR), 1.0 / 255)
+        val smooth = SmoothValue().step(1.0, tick = 0, duration = 8.0, quantize = 255)
+        assertEquals(0.15625, smooth.curveAt(2, 8.0), 0.01)
+    }
+
+    @Test
     fun testRepeatingTheSameTargetKeepsTheTransition() {
         val state = SmoothValue().step(1.0, tick = 0, duration = 10.0, quantize = 255)
         val before = state.from()

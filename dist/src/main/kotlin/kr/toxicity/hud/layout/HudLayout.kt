@@ -51,6 +51,9 @@ interface HudLayout<T : HudElement> : ConditionSource, PlaceholderSource {
      */
     val clipFillValue: PlaceholderBuilder<*>?
 
+    /** How `clip-fill.value` is read; see [ClipRegion.UNIT_AUTO]. Never reaches the shader. */
+    val clipFillUnit: Int get() = ClipRegion.UNIT_AUTO
+
     /**
      * A content scroll (`scroll`): the placeholder which moves the element along one axis, driven on the
      * GPU between updates. Null when the element does not scroll.
@@ -114,12 +117,14 @@ interface HudLayout<T : HudElement> : ConditionSource, PlaceholderSource {
          */
         override val clip: ClipRegion? = yaml.clipRect()?.let { rect ->
             val fill = yaml["clip-fill"]?.asObject()
+            // `up` and `left` name the end the boundary walks towards, which the axis alone cannot.
+            val direction = fill?.getAsString("direction", "right")?.lowercase()
             ClipRegion(
                 rect[0], rect[1], rect[2], rect[3],
                 yaml.getAsDouble("clip-radius", 0.0).coerceAtLeast(0.0),
                 yaml.getAsDouble("clip-soft", 0.0).coerceAtLeast(0.0),
                 fill?.let {
-                    when (it.getAsString("direction", "right").lowercase()) {
+                    when (direction) {
                         "up", "down" -> ClipRegion.AXIS_Y
                         "center-x", "centerx" -> ClipRegion.AXIS_CENTER_X
                         "center-y", "centery" -> ClipRegion.AXIS_CENTER_Y
@@ -128,7 +133,7 @@ interface HudLayout<T : HudElement> : ConditionSource, PlaceholderSource {
                         else -> ClipRegion.AXIS_X
                     }
                 } ?: ClipRegion.NONE,
-                fill?.getAsBoolean("invert", false) ?: false,
+                (fill?.getAsBoolean("invert", false) ?: false) xor (direction == "up" || direction == "left"),
                 // The region is a fixed window inside the element's own box unless the config asks for the
                 // other reading, `clip-follow: content`, where the rectangle is a stencil on the picture
                 // and travels with it (scroll and rotation both).
@@ -152,6 +157,10 @@ interface HudLayout<T : HudElement> : ConditionSource, PlaceholderSource {
          * per update, which the shader tweens towards on the GPU.
          */
         override val clipFillValue: PlaceholderBuilder<*>? = yaml.numberOf("clip-fill", "value", this)
+        override val clipFillUnit: Int = yaml["clip-fill"]?.asObject()
+            ?.getAsString("unit", "auto")
+            ?.let { ClipRegion.unitOf(it) }
+            ?: ClipRegion.UNIT_AUTO
     }
 }
 

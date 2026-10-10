@@ -101,7 +101,17 @@ object PayloadKind {
     const val SMOOTH_TWEEN = 6
 
     /**
-     * Picks the layout for the given element.
+     * Red holds an eight bit angle; green/blue hold a six bit `from`, a six bit `to` and the four bit tick
+     * they were sent for.
+     *
+     * The one pair no other layout has room for: a region which fills while its element turns. The angle
+     * is stepped rather than tweened - eight bits of it is what the sixteen left over allow - so it suits a
+     * fan which jumps to a new angle, not a fast spin.
+     */
+    const val SMOOTH_MIXED = 7
+
+    /**
+     * Picks the layout for the given element. The priority itself lives in one place, [PayloadOwner.of].
      * @param rotationDynamic whether the angle is evaluated per update
      * @param positionDynamic whether the offset is evaluated per update
      * @param rateSmooth whether the element wants the rate carrying layout (a tweened rotation)
@@ -116,17 +126,17 @@ object PayloadKind {
         valueSmooth: Boolean,
         tweenSmooth: Boolean = false,
         rotationWide: Boolean = false
-    ) = when {
-        // A tweened angle long enough to need it takes the eight bit payload's much longer ramp.
-        rotationWide -> SMOOTH_VALUE
-        tweenSmooth -> SMOOTH_TWEEN
-        rateSmooth -> SMOOTH_ROTATION
-        valueSmooth -> SMOOTH_VALUE
-        rotationDynamic && positionDynamic -> ROTATION_POSITION
-        rotationDynamic -> ROTATION
-        positionDynamic -> POSITION
-        else -> NONE
-    }
+    ) = PayloadOwner.of(
+        rotationDynamic,
+        positionDynamic,
+        rateSmooth,
+        valueSmooth,
+        // The older signatures cannot tell a scroll from a narrow angle tween; both take SMOOTH_TWEEN,
+        // so the merged flag is read as the scroll the owner table lists first of the two.
+        scrollSmooth = tweenSmooth,
+        rotationTween = false,
+        rotationWide = rotationWide
+    ).kind
 
     /**
      * Picks the layout for the given element.
@@ -136,4 +146,70 @@ object PayloadKind {
      */
     fun of(rotationDynamic: Boolean, positionDynamic: Boolean) =
         of(rotationDynamic, positionDynamic, false, false)
+}
+
+/**
+ * Which of an element's per update values owns the glyph's colour channels.
+ *
+ * A glyph has three writable channels, so one value can travel between updates - and the case body
+ * (which decodes that value) and the renderer (which packs it) have to agree on which. [of] is the only
+ * place that decides; [kind] is what the case body emits as `bhPayload`.
+ */
+enum class PayloadOwner(val kind: Int) {
+    /** Nothing changes between updates. */
+    NONE(PayloadKind.NONE),
+
+    /** A tweened angle long enough to need the eight bit payload's longer ramp. */
+    ROTATION_WIDE(PayloadKind.SMOOTH_VALUE),
+
+    /** A content scroll. */
+    SCROLL(PayloadKind.SMOOTH_TWEEN),
+
+    /** A tweened angle carried as two known endpoints. */
+    ROTATION_TWEEN(PayloadKind.SMOOTH_TWEEN),
+
+    /** A tweened angle carried as a value and a rate. */
+    ROTATION_RATE(PayloadKind.SMOOTH_ROTATION),
+
+    /** The boundary of a `clip-fill` region. */
+    FILL(PayloadKind.SMOOTH_VALUE),
+
+    /** A turning element and a filling region at once: an eight bit angle over a tweened value. */
+    MIXED(PayloadKind.SMOOTH_MIXED),
+
+    /** The angle alone. */
+    ROTATION(PayloadKind.ROTATION),
+
+    /** The offset alone. */
+    POSITION(PayloadKind.POSITION),
+
+    /** The angle and the offset together. */
+    TRANSFORM(PayloadKind.ROTATION_POSITION);
+
+    companion object {
+        fun of(
+            rotationDynamic: Boolean,
+            positionDynamic: Boolean,
+            rateSmooth: Boolean,
+            valueSmooth: Boolean,
+            scrollSmooth: Boolean = false,
+            rotationTween: Boolean = false,
+            rotationWide: Boolean = false
+        ): PayloadOwner = when {
+            // The eight bit payload's longer ramp, for an angle which needs it.
+            rotationWide -> ROTATION_WIDE
+            // A scroll and a narrow angle tween share SMOOTH_TWEEN; the scroll has always owned it.
+            scrollSmooth -> SCROLL
+            // A region which fills while the element turns takes the one layout carrying both, at the cost
+            // of stepping the angle rather than tweening it.
+            valueSmooth && rotationDynamic -> MIXED
+            rotationTween -> ROTATION_TWEEN
+            rateSmooth -> ROTATION_RATE
+            valueSmooth -> FILL
+            rotationDynamic && positionDynamic -> TRANSFORM
+            rotationDynamic -> ROTATION
+            positionDynamic -> POSITION
+            else -> NONE
+        }
+    }
 }
