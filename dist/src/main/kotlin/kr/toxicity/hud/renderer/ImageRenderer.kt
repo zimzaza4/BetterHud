@@ -15,10 +15,17 @@ import kr.toxicity.hud.shader.Rotation
 import kr.toxicity.hud.shader.ScrollTween
 import kr.toxicity.hud.shader.SmoothValue
 import kr.toxicity.hud.util.*
-import java.util.WeakHashMap
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.ceil
 import kotlin.math.abs
 import kotlin.math.roundToInt
+
+/** Tween states of players who left are dropped once a renderer's table reaches this size. */
+private const val PRUNE_THRESHOLD = 64
+
+/** How often such a table may be scanned; the scan is O(entries), so it does not run every update. */
+private const val PRUNE_INTERVAL_MILLIS = 30_000L
 
 class ImageRenderer(
     // The case owns the payload's meaning: packing anything but the value it was told to decode would
@@ -58,10 +65,6 @@ class ImageRenderer(
         val rotationWide = smooth?.takeIf {
             it.omegaScale <= 0.0 && rotationGetter != null && it.duration > ScrollTween.WINDOW
         }
-        val fillStates = if (fillSmooth != null) WeakHashMap<HudPlayer, SmoothValue>() else null
-        val rotationStates = if (rotationSmooth != null) WeakHashMap<HudPlayer, AngleRate>() else null
-        val rotationTweens = if (rotationTween != null) WeakHashMap<HudPlayer, ScrollTween>() else null
-        val rotationWides = if (rotationWide != null) WeakHashMap<HudPlayer, ScrollTween>() else null
         // A content scroll shares the precise, rate carrying payload of a tweened rotation (an 11 bit
         // value and an 8 bit rate), which is what a long strip needs: range and continuity.
         val scrollGetter = scrollValue?.build(event)
@@ -70,7 +73,21 @@ class ImageRenderer(
         // The tween a scrolling element is walking right now: its `from` is re-based on every update and
         // its domain is unbounded (a wrapping placeholder counts whole periods), so the state is kept per
         // player and per element.
-        val scrollStates = if (scrollSmooth != null) WeakHashMap<HudPlayer, ScrollTween>() else null
+        // One table for this renderer's per-player tween state, keyed by uuid: a hud which follows
+        // somebody else renders through a proxy, and an identity key would add one entry per update.
+        val states = ConcurrentHashMap<UUID, TweenState>()
+        var lastPrune = 0L
+        fun stateOf(target: HudPlayer): TweenState {
+            // Pruning scans the whole table, so it is throttled: a full server keeps it above the
+            // threshold every frame, and scanning it per element per update would cost more than the
+            // entries it frees.
+            val now = System.currentTimeMillis()
+            if (states.size >= PRUNE_THRESHOLD && now - lastPrune >= PRUNE_INTERVAL_MILLIS) {
+                lastPrune = now
+                states.keys.removeIf { PlayerManagerImpl.getHudPlayer(it) == null }
+            }
+            return states.computeIfAbsent(target.uuid()) { TweenState() }
+        }
 
         return tickProvide(tick) build@ { player, frame ->
             val selected = mapper(player)
@@ -115,12 +132,13 @@ class ImageRenderer(
                     // A getter is built for every event and can be absent for an update (a placeholder which
                     // does not apply to it). The case still decodes the layout its owner names, so an arm
                     // without its value keeps the plain colour - the guard the dispatch used to carry.
+                    val tween = stateOf(target)
                     when (payloadOwner) {
                         PayloadOwner.SCROLL -> if (scrollSmooth != null && scrollGetter != null && scrolling != null) {
                             val pixels = (scrollGetter.value(target) as? Number)?.toDouble() ?: 0.0
                             // The shape follows the element's own update: a ramp it can contain is left to
                             // finish (an input sampled every few ticks), one which outlives it is continued.
-                            val state = scrollStates!!.getOrPut(target) { ScrollTween() }.step(
+                            val state = tween.scroll.step(
                                 RatePayload.normalized(pixels, scrolling.scale * 2.0, 0.0),
                                 time240,
                                 scrollSmooth.duration,
@@ -136,7 +154,7 @@ class ImageRenderer(
                         } else base applyColor colorApply(target)
                         PayloadOwner.FILL -> if (fillSmooth != null && fillGetter != null) {
                             val raw = (fillGetter.value(target) as? Number)?.toDouble() ?: 0.0
-                            val state = fillStates!!.getOrPut(target) { SmoothValue() }
+                            val state = tween.fill
                                 .step(fillValueOf(raw), time240, fillSmooth.duration, 255, fillSmooth.easing)
                             base.applySmoothValuePayload(state.from(), state.to(), state.tick())
                         } else base applyColor colorApply(target)
@@ -145,7 +163,7 @@ class ImageRenderer(
                             // 64 step grid the sixteen bits below the angle allow.
                             val degree = (rotationGetter.value(target) as? Number)?.toDouble() ?: 0.0
                             val raw = (fillGetter.value(target) as? Number)?.toDouble() ?: 0.0
-                            val state = fillStates!!.getOrPut(target) { SmoothValue() }
+                            val state = tween.fill
                                 .step(fillValueOf(raw), time240, fillSmooth.duration, 63, fillSmooth.easing)
                             base.applyMixedPayload(
                                 degree, state.from(), state.to(), RatePayload.rampTickOf(fallbackTick)
@@ -155,7 +173,7 @@ class ImageRenderer(
                             // SCROLL owner does below, so the case body routes it into `bhScrollV` the same way.
                             val degree = (rotationGetter.value(target) as? Number)?.toDouble() ?: 0.0
                             val pixels = (scrollGetter.value(target) as? Number)?.toDouble() ?: 0.0
-                            val state = scrollStates!!.getOrPut(target) { ScrollTween() }.step(
+                            val state = tween.scroll.step(
                                 RatePayload.normalized(pixels, scrolling.scale * 2.0, 0.0),
                                 time240,
                                 scrollSmooth.duration,
@@ -175,7 +193,7 @@ class ImageRenderer(
                             // A turn too fast for the four bit tick's ramp: the eight bit payload's tick
                             // counts to 240, so the ramp can cover the part of the step a continued one
                             // leaves behind. The angle is still normalized and walked the short way round.
-                            val state = rotationWides!!.getOrPut(target) { ScrollTween() }.step(
+                            val state = tween.rotationWide.step(
                                 degree / 360.0,
                                 time240,
                                 rotationWide.duration,
@@ -194,7 +212,7 @@ class ImageRenderer(
                             val degree = (rotationGetter.value(target) as? Number)?.toDouble() ?: 0.0
                             // The angle is a scalar with its own 360 degree period, so it is normalized and
                             // the tween takes the short way round a whole turn, exactly as a scroll does.
-                            val state = rotationTweens!!.getOrPut(target) { ScrollTween() }.step(
+                            val state = tween.rotationTween.step(
                                 degree / 360.0,
                                 time240,
                                 rotationTween.duration,
@@ -212,7 +230,7 @@ class ImageRenderer(
                             val degree = (rotationGetter.value(target) as? Number)?.toDouble() ?: 0.0
                             // The tracker works in degrees; the payload's rate field is scaled in radians
                             // per tick (`bhOmegaScale`), so the rate is converted before it is packed.
-                            val rate = rotationStates!!.getOrPut(target) { AngleRate() }.step(degree, time240)
+                            val rate = tween.rotation.step(degree, time240)
                             base.applyRatePayload(
                                 degree, Math.toRadians(rate), rateTick, 360.0, rotationSmooth.omegaScale
                             )

@@ -110,7 +110,7 @@ abstract class HudPlayerImpl : HudPlayer {
                     false
                 }.handleFailure {
                     "Unable to update ${k}."
-                }.getOrDefault(true)
+                }.getOrDefault(false)
             }
             val popupGroupIterator = popupGroup.values.iterator()
             while (popupGroupIterator.hasNext()) {

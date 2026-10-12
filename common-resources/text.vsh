@@ -64,8 +64,10 @@ float bhEase(float t, float mode) {
 // Ticks elapsed since the update which wrote `tick`, for the payload layouts below. Both periods
 // divide 24000, so GameTime * 24000 (the world time in ticks) survives the day counter.
 float bhAge(int tick, float period) {
-    float half = period * 0.5;
-    return mod(GameTime * 24000.0 - float(tick) + half, period) - half;
+    // `half` is a reserved word in GLSL: an NVIDIA driver refuses the whole shader over it, which
+    // takes every text pipeline down with it.
+    float halfPeriod = period * 0.5;
+    return mod(GameTime * 24000.0 - float(tick) + halfPeriod, period) - halfPeriod;
 }
 
 bool range(float t, float m1, float m2) {

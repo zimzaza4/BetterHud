@@ -39,19 +39,20 @@ object PlayerManagerImpl : BetterHudManager, PlayerManager {
     fun addHudPlayer(uuid: UUID, player: () -> HudPlayerImpl): HudPlayer {
         return playerMap.computeIfAbsent(uuid) {
             player().apply {
-                stringPlayer[name()] = this
+                stringPlayer[name().lowercase()] = this
             }
         }
     }
     fun removeHudPlayer(uuid: UUID) = playerMap.remove(uuid)?.apply {
-        stringPlayer.remove(name())
+        stringPlayer.remove(name().lowercase())
     }
 
     override fun getAllHudPlayer(): Collection<HudPlayer> = Collections.unmodifiableCollection(playerMap.values)
 
     override fun getHudPlayer(uuid: UUID) = playerMap[uuid]
 
-    fun getHudPlayer(name: String) = stringPlayer[name]
+    /** Looks a player up by name, ignoring case: a config does not have to spell it exactly. */
+    fun getHudPlayer(name: String) = stringPlayer[name.lowercase()]
 
     override fun addLocationProvider(provider: PointedLocationProvider) {
         locationProviders += provider

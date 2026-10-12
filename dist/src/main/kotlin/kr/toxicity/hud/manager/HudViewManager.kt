@@ -3,17 +3,14 @@ package kr.toxicity.hud.manager
 import kr.toxicity.hud.api.hud.Hud
 import kr.toxicity.hud.api.hud.HudViewOption
 import kr.toxicity.hud.api.player.HudPlayer
+import kr.toxicity.hud.hud.ObserverHudViewOption
 
 /**
- * Registry of the hud view option (see [HudViewOption]).
+ * Registry of the hud view option (see [HudViewOption]): the plugin which manages a hud answers
+ * whose data it shows and which entries a player does not see.
  *
- * The plugin which manages a hud is the one which knows who watches whom, so it answers here whose
- * data a hud shows and which of its entries a player does not see. The option is asked again on
- * every update, and it survives a reload (a plugin only has to set it once); [clear] drops it when
- * BetterHud is disabled.
- *
- * A broken option must never take a hud down: every answer falls back to [HudViewOption.SELF], and
- * when nothing is registered there is no wrapper and no lookup at all.
+ * What a hud declares in its own yml (its `observer` block) answers where that option has nothing to
+ * say, and the hidden entries are the union of both.
  */
 object HudViewManager {
 
@@ -27,6 +24,10 @@ object HudViewManager {
     val isCustom: Boolean
         get() = option !== HudViewOption.SELF
 
+    /** What the huds themselves declare, asked where [option] has nothing to say. */
+    private val builtin: HudViewOption
+        get() = ObserverHudViewOption
+
     fun set(option: HudViewOption?) {
         this.option = option ?: HudViewOption.SELF
     }
@@ -34,22 +35,33 @@ object HudViewManager {
     fun clear() = set(null)
 
     /**
-     * Whether this hud may ever show somebody else's data.
-     *
-     * Only huds answering true are wrapped in a data proxy, and that is not just a shortcut: the
-     * renderers keep their interpolation state in a weak map keyed by [HudPlayer] identity, so a
-     * hud wrapped for nothing loses its tweening every frame while still being drawn.
+     * Whether this hud may show somebody else's data. Only these are wrapped in a data proxy: the
+     * renderers key their interpolation state by player identity, so a needless wrap costs its tweening.
      */
     fun usesSubject(hud: Hud): Boolean =
-        isCustom && runCatching { option.usesSubject(hud) }.getOrDefault(false)
+        (isCustom && runCatching { option.usesSubject(hud) }.getOrDefault(false)) ||
+            runCatching { builtin.usesSubject(hud) }.getOrDefault(false)
 
-    /** Whose data this hud shows - the viewer looking at it, unless the option names somebody else. */
-    fun dataOf(hud: Hud, viewer: HudPlayer): HudPlayer =
-        if (!isCustom) viewer
-        else runCatching { option.dataOf(hud, viewer) }.getOrDefault(viewer)
+    /** Whose data this hud shows - the viewer looking at it, unless one of the two options names somebody else. */
+    fun dataOf(hud: Hud, viewer: HudPlayer): HudPlayer {
+        if (isCustom) {
+            val registered = runCatching { option.dataOf(hud, viewer) }.getOrNull()
+            // The viewer himself is the plugin saying it has nothing to say about this hud.
+            if (registered != null && registered !== viewer) return registered
+        }
+        return runCatching { builtin.dataOf(hud, viewer) }.getOrDefault(viewer)
+    }
 
-    /** Which entries of this hud are not rendered for this viewer. */
-    fun hiddenEntriesOf(hud: Hud, viewer: HudPlayer): Set<String> =
-        if (!isCustom) emptySet()
-        else runCatching { option.hiddenEntriesOf(hud, viewer) }.getOrDefault(emptySet())
+    /** Entries which are not rendered for this viewer: the union of both sources, neither wins. */
+    fun hiddenEntriesOf(hud: Hud, viewer: HudPlayer): Set<String> {
+        val registered = if (isCustom) runCatching {
+            option.hiddenEntriesOf(hud, viewer)
+        }.getOrDefault(emptySet()) else emptySet()
+        val declared = runCatching { builtin.hiddenEntriesOf(hud, viewer) }.getOrDefault(emptySet())
+        return when {
+            declared.isEmpty() -> registered
+            registered.isEmpty() -> declared
+            else -> registered + declared
+        }
+    }
 }

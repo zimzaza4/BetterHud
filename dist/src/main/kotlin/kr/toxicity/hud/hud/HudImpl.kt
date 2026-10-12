@@ -13,6 +13,7 @@ import kr.toxicity.hud.animation.AnimationType
 import kr.toxicity.hud.manager.ConfigManagerImpl
 import kr.toxicity.hud.manager.HudViewManager
 import kr.toxicity.hud.manager.LayoutManager
+import kr.toxicity.hud.manager.PlayerManagerImpl
 import kr.toxicity.hud.pack.PackGenerator
 import kr.toxicity.hud.location.GuiLocation
 import kr.toxicity.hud.manager.EncodeManager
@@ -20,6 +21,8 @@ import kr.toxicity.hud.placeholder.PlaceholderSource
 import kr.toxicity.hud.player.SubjectHudPlayer
 import kr.toxicity.hud.resource.GlobalResource
 import kr.toxicity.hud.util.*
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 class HudImpl(
     override val id: String,
@@ -39,6 +42,49 @@ class HudImpl(
     private val default = ConfigManagerImpl.defaultHud.contains(id) || section.getAsBoolean("default", false)
     var textIndex = 0
     private val tick = section.getAsLong("tick", 1)
+
+    /** The proxy of one viewer, together with the player object it was built from. */
+    private class SubjectEntry(val player: HudPlayer, val proxy: SubjectHudPlayer)
+
+    private val subjectPlayers = ConcurrentHashMap<UUID, SubjectEntry>()
+
+    /** When the table was last scanned; the scan is O(entries) and must not run per mount. */
+    @Volatile
+    private var lastPrune = 0L
+
+    /**
+     * The proxy of this viewer. It is reused across updates - the renderers key their tween state by
+     * the player they are given, so a proxy that changes would restart every smooth element - but never
+     * across a player object: BetterHud rebuilds a HudPlayer on rejoin or reload, and a proxy still
+     * holding the old one keeps answering with its data (placeholders reading through the HudPlayer
+     * stop following, while those reading `handle()` keep working). The entries of players who left go
+     * once the table grows.
+     */
+    private fun subjectPlayerOf(player: HudPlayer): SubjectHudPlayer {
+        subjectPlayers[player.uuid()]?.let {
+            if (it.player === player) return it.proxy
+        }
+        if (subjectPlayers.size >= PRUNE_THRESHOLD) {
+            val now = System.currentTimeMillis()
+            if (now - lastPrune >= PRUNE_INTERVAL_MILLIS) {
+                lastPrune = now
+                subjectPlayers.keys.removeIf { PlayerManagerImpl.getHudPlayer(it) == null }
+            }
+        }
+        return subjectPlayers.compute(player.uuid()) { _, _ ->
+            SubjectEntry(player, SubjectHudPlayer(this, player))
+        }!!.proxy
+    }
+
+    private companion object {
+        const val PRUNE_THRESHOLD = 64
+        const val PRUNE_INTERVAL_MILLIS = 30_000L
+    }
+
+    /** The `observer` block of this hud, read from its own yml (see [ObserverOption]). */
+    internal val observerOption = section["observer"]?.asObject()?.let {
+        ObserverOption.parse(this, it)
+    }
 
     fun getOrCreateSpace(int: Int): String = spaces.computeIfAbsent(int) {
         newChar
@@ -99,7 +145,7 @@ class HudImpl(
         // viewer's. Only huds which actually switch data are wrapped: the wrapper is a different
         // object, and BetterHud keys its interpolation state by player identity (a hud wrapped for
         // nothing would lose every tween it has).
-        val renderPlayer = if (HudViewManager.usesSubject(this)) SubjectHudPlayer(this, player) else player
+        val renderPlayer = if (HudViewManager.usesSubject(this)) subjectPlayerOf(player) else player
         val map = elements.map { animation ->
             animation to animation.elements.map { p ->
                 runByTick(tick, { renderPlayer.tick }, p.getComponent(renderPlayer))

@@ -7,9 +7,10 @@ import kr.toxicity.hud.manager.HudViewManager
 /**
  * The player one hud is rendered *for*, whose data is read from whoever [HudViewManager] names.
  *
- * Data accessors are resolved on every call - with a one-per-tick cache, since a placeholder asks for
- * the same uuid a dozen times per frame - so an observer switching to another target follows on the
- * next update without the hud being re-created.
+ * The answer is resolved once per tick of the viewer and then reused: a placeholder asks for the same
+ * uuid a dozen times per frame, and every access re-resolving it would run the whole view-option chain
+ * (two plugins' answers plus two `runCatching`) again and again. `tick` advances on every update of
+ * this player, so the cache follows an observer switching targets without lagging.
  *
  * Everything which is not data stays the viewer's: the tick the animations run on, the components
  * the hud is written into, his variables, his popups, his hud set.
@@ -38,4 +39,5 @@ internal class SubjectHudPlayer(
     override fun world() = data.world()
     override fun handle() = data.handle()
     override fun getHead() = data.getHead()
+    override fun gameTime() = data.gameTime()
 }
