@@ -138,11 +138,11 @@ public interface ShaderManager {
         /**
          * text vsh
          */
-        TEXT_VERTEX("text.vsh", "rendertype_text.vsh", "text.vsh"),
+        TEXT_VERTEX("vsh"),
         /**
          * text fsh
          */
-        TEXT_FRAGMENT("text.fsh", "rendertype_text.fsh", "text.fsh")
+        TEXT_FRAGMENT("fsh")
 
         ;
         /**
@@ -152,12 +152,11 @@ public interface ShaderManager {
 
         private static final @NotNull DateTimeFormatter BACKUP_TIME = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
 
-        private final @NotNull String fileName;
-        private final @NotNull String[] shadersCoreNames;
+        private final @NotNull String extension;
 
-        ShaderType(@NotNull String fileName, @NotNull String... shadersCoreNames) {
-            this.fileName = fileName;
-            this.shadersCoreNames = shadersCoreNames;
+
+        ShaderType(@NotNull String extension) {
+            this.extension = extension;
         }
 
         /**
@@ -204,25 +203,26 @@ public interface ShaderManager {
          * Reads the all line of shader file.
          * @return all line.
          */
-        public @NotNull List<String> lines() {
+        public @NotNull List<String> lines(@NotNull String overlay) {
             var bootstrap = BetterHudAPI.inst().bootstrap();
             var dataFolder = bootstrap.dataFolder();
-            var shaderLocation = new File(dataFolder, "shaders");
+            var shaderLocation = new File(dataFolder, "shaders/" + overlay);
             if (!shaderLocation.exists() && !shaderLocation.mkdirs()) {
-                bootstrap.logger().warn("Unable to create folder BetterHud/shaders.");
+                bootstrap.logger().warn("Unable to create folder BetterHud/shaders/" + overlay + ".");
             }
+            var fileName = "text." + extension;
             var dataFile = new File(shaderLocation, fileName);
-            var bundled = bundled();
+            var bundled = bundled(overlay);
             var bundledHash = hash(bundled);
             var recordFile = new File(shaderLocation, RECORD_FILE);
             var record = readRecord(recordFile);
             var decision = decide(record.get(fileName), dataFile.exists() ? hash(dataFile) : null, bundledHash);
             if (decision == Bundled.REFRESH) {
                 // untouched copy of an older default: drop it so that the extraction below reads the new one
-                bootstrap.logger().info("Refreshed BetterHud/shaders/" + fileName + ": it had not been edited and the bundled default has changed.");
-                if (!dataFile.delete()) bootstrap.logger().warn("Unable to delete an outdated BetterHud/shaders/" + fileName + ".");
+                bootstrap.logger().info("Refreshed BetterHud/shaders/" + overlay + "/" + fileName + ": it had not been edited and the bundled default has changed.");
+                if (!dataFile.delete()) bootstrap.logger().warn("Unable to delete an outdated BetterHud/shaders/" + overlay + "/" + fileName + ".");
             } else if (decision == Bundled.KEEP_AND_WARN) {
-                bootstrap.logger().warn("BetterHud/shaders/" + fileName + " differs from the bundled default. If you did not edit it yourself, it may be left behind by an older BetterHud: /bh shaders restores the bundled files.");
+                bootstrap.logger().warn("BetterHud/shaders/" + overlay + "/" + fileName + " differs from the bundled default. If you did not edit it yourself, it may be left behind by an older BetterHud: /bh shaders restores the bundled files.");
             }
             record.put(fileName, bundledHash);
             writeRecord(recordFile, record);
@@ -253,37 +253,39 @@ public interface ShaderManager {
         }
 
         /**
-         * Writes the bundled default back into the data folder.
+         * Writes the bundled default back into the data folder for a given overlay.
          * A copy that differs from the default is backed up as {@code <file>.bak-<time>} first.
          * @return whether the file was written
          */
         @ApiStatus.Internal
-        public boolean restore() {
+        public boolean restore(@NotNull String overlay) {
             var bootstrap = BetterHudAPI.inst().bootstrap();
-            var shaderLocation = new File(bootstrap.dataFolder(), "shaders");
+            var shaderLocation = new File(bootstrap.dataFolder(), "shaders/" + overlay);
             if (!shaderLocation.exists() && !shaderLocation.mkdirs()) {
-                bootstrap.logger().warn("Unable to create folder BetterHud/shaders.");
+                bootstrap.logger().warn("Unable to create folder BetterHud/shaders/" + overlay + ".");
                 return false;
             }
+            var fileName = "text." + extension;
             var target = new File(shaderLocation, fileName);
             try {
-                var bytes = bundled();
+                var bytes = bundled(overlay);
                 if (target.isFile() && !Arrays.equals(Files.readAllBytes(target.toPath()), bytes)) {
                     var backup = new File(shaderLocation, fileName + ".bak-" + LocalDateTime.now().format(BACKUP_TIME));
                     Files.copy(target.toPath(), backup.toPath());
-                    bootstrap.logger().info("Backed up the previous BetterHud/shaders/" + fileName + " as " + backup.getName() + ".");
+                    bootstrap.logger().info("Backed up the previous BetterHud/shaders/" + overlay + "/" + fileName + " as " + backup.getName() + ".");
                 }
                 Files.write(target.toPath(), bytes);
                 return true;
             } catch (IOException e) {
-                bootstrap.logger().warn("Unable to restore BetterHud/shaders/" + fileName + ": " + e.getMessage());
+                bootstrap.logger().warn("Unable to restore BetterHud/shaders/" + overlay + "/" + fileName + ": " + e.getMessage());
                 return false;
             }
         }
 
-        private @NotNull byte[] bundled() {
+        private @NotNull byte[] bundled(@NotNull String overlay) {
             var bootstrap = BetterHudAPI.inst().bootstrap();
-            try (var resourceStream = Objects.requireNonNull(bootstrap.resource(fileName), "Unknown resource: " + fileName)) {
+            var path = "shaders/" + overlay + "/text." + extension;
+            try (var resourceStream = Objects.requireNonNull(bootstrap.resource(path), "Unknown resource: " + path)) {
                 return resourceStream.readAllBytes();
             } catch (IOException e) {
                 throw new RuntimeException("plugin jar file has a problem.");

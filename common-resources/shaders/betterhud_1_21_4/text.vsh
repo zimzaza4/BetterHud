@@ -1,56 +1,27 @@
-#version 330
-
-// 26.2 stages every GUI draw in one shared vertex buffer and issues each of them with a
-// baseVertex offset, so gl_VertexID is no longer the index inside the draw: extra HUD
-// geometry (item durability bar, hotbar cooldown overlay) shifts it and changes which
-// corner every glyph vertex is taken to be. gl_BaseVertexARB is not an option either -
-// Iris and other GLSL parsers reject the ARB-suffixed builtin.
-//
-// 26.2 textures every glyph with a 0.01 inset (FontTexture.add), so the fractional part
-// of UV0 * 256 is ~0.01 on the left/top vertex of the quad and ~0.99 on the right/bottom
-// one. That identifies the corner with no vertex index and no extension at all, on every
-// backend. Older versions keep the plain gl_VertexID % 4 mapping.
+#version 150
 
 #CreateConstant
 
 #if !defined(IS_GUI) && !defined(IS_SEE_THROUGH)
 #moj_import <fog.glsl>
-#moj_import <sample_lightmap.glsl>
+out float vertexDistance;
 #endif
 
-#if SHADER_VERSION >= 2
-#moj_import <dynamictransforms.glsl>
-#moj_import <projection.glsl>
-#moj_import <globals.glsl>
-out float sphericalVertexDistance;
-out float cylindricalVertexDistance;
-#else
 uniform mat4 ProjMat;
 uniform mat4 ModelViewMat;
 uniform int FogShape;
-out float vertexDistance;
 uniform vec2 ScreenSize;
 uniform float GameTime;
-#endif
 
 in vec3 Position;
 in vec4 Color;
 in vec2 UV0;
-#if !defined(IS_GUI) && !defined(IS_SEE_THROUGH)
-in ivec2 UV2;
-#endif
 
 uniform sampler2D Sampler0;
-#if !defined(IS_GUI) && !defined(IS_SEE_THROUGH)
-uniform sampler2D Sampler2;
-#endif
 
 out vec4 vertexColor;
 out vec2 texCoord0;
 out vec4 bhClip;
-// Custom clip region (`clip-rect`), carried in element pixels from the element's top-left corner.
-// bhFillV = (enabled, feather width, corner radius, unused): a fragment which sees 0 does nothing,
-// so an element without a region costs one branch and no case-body flag.
 out vec2 bhLocalV;
 out vec4 bhRectV;
 out vec4 bhFillV;
@@ -80,24 +51,6 @@ bool range(vec2 t, vec2 m1, vec2 m2) {
 
 bool range(vec3 t, vec3 m1, vec3 m2) {
     return range(t.x, m1.x, m2.x) && range(t.y, m1.y, m2.y) && range(t.z, m1.z, m2.z);
-}
-
-bool checkElement(float z) {
-    if (z == 0) return true; //<=1.20.4 vanilla
-    else if (z == 1000) return true; //>=1.20.5 vanilla
-    else if (z == -90) return true; //<=1.20.4 forge
-    else if (z == 2800) return true; //neoforge
-    return false;
-}
-
-float fogDistance(vec3 pos, int shape) {
-    if (shape == 0) {
-        return length(pos);
-    } else {
-        float distXZ = length(pos.xz);
-        float distY = abs(pos.y);
-        return max(distXZ, distY);
-    }
 }
 
 #GenerateOtherDefinedMethod
@@ -181,11 +134,8 @@ void main() {
             #define BH_FLAT_LAYOUT
             #CreateLayout
 
-#if SHADER_VERSION < 1
-            vertexColor = (checkElement(pos.z) && !outline) ? vec4(0) : Color * vec4(1, 1, 1, opacity);
-#else
             vertexColor = Color * vec4(1, 1, 1, opacity);
-#endif
+            vertexColor = Color * vec4(1, 1, 1, opacity);
 
             //Wave
             if ((property & 1) > 0) {
@@ -332,13 +282,8 @@ void main() {
             // The payload owns the colour bytes; draw the glyph plain white, keeping the alpha.
             vertexColor = vec4(1.0, 1.0, 1.0, vertexColor.w);
         }
-#if SHADER_VERSION >= 3
-        // corner from the glyph texture inset (see the note at the top of this file)
-        vec2 bhCs = sign(vec2(fract(UV0.x * 256.0) - 0.5, fract(UV0.y * 256.0) - 0.5));
-#else
         float bhCi = float(gl_VertexID % 4);
         vec2 bhCs = vec2((bhCi == 2.0 || bhCi == 3.0) ? 1.0 : -1.0, (bhCi == 1.0 || bhCi == 2.0) ? 1.0 : -1.0);
-#endif
         vec2 bhPivot = pos.xy - bhCs * bhRotHalf + bhRotAnchor;
         float bhCa = cos(bhRot);
         float bhSa = sin(bhRot);
@@ -421,19 +366,10 @@ void main() {
         }
     }
 #if !defined(IS_GUI) && !defined(IS_SEE_THROUGH)
-    vertexColor *= sample_lightmap(Sampler2, UV2);
+    vertexDistance = fog_distance(pos, FogShape);
 #endif
 
     #GenerateOtherMainMethod
-
-#if SHADER_VERSION >= 2
-    #if !defined(IS_GUI) && !defined(IS_SEE_THROUGH)
-    sphericalVertexDistance = fog_spherical_distance(pos);
-    cylindricalVertexDistance = fog_cylindrical_distance(pos);
-    #endif
-#else
-    vertexDistance = fogDistance(pos, FogShape);
-#endif
 
     texCoord0 = UV0;
     gl_Position = ProjMat * ModelViewMat * vec4(pos, 1.0);

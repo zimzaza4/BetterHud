@@ -19,6 +19,7 @@ import kr.toxicity.hud.api.plugin.ReloadInfo
 import kr.toxicity.hud.api.plugin.ReloadState.*
 import kr.toxicity.hud.api.update.UpdateEvent
 import kr.toxicity.hud.command.*
+import kr.toxicity.hud.pack.PackOverlay
 import kr.toxicity.hud.placeholder.PlaceholderSource
 import kr.toxicity.hud.resource.GlobalResource
 import kr.toxicity.hud.util.*
@@ -555,8 +556,10 @@ object CommandManager : BetterHudManager {
                     @Description(key = "betterhud.shaders.reset.description", defaultValue = "Restores the bundled shader files.")
                     @Permission("betterhud.shaders.reset")
                     fun reset(@Source me: BetterCommandSource) {
-                        val restored = ShaderType.entries.count {
-                            it.restore()
+                        val restored = PackOverlay.entries.sumOf { overlay ->
+                            ShaderType.entries.count {
+                                it.restore(overlay.overlayName)
+                            }
                         }
                         if (restored > 0) reset_success.send(me, mapOf("count" to Component.text(restored))) else reset_failure.send(me)
                     }

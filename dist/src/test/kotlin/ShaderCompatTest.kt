@@ -18,76 +18,81 @@ import kotlin.test.assertTrue
  */
 class ShaderCompatTest {
 
-    private fun source(name: String): String =
-        listOf("../common-resources/$name", "common-resources/$name")
+    private val overlays = listOf(
+        "betterhud_1_21_4",
+        "betterhud_1_21_6",
+        "betterhud_26_1",
+        "betterhud_26_2",
+        "betterhud_26_3"
+    )
+
+    private val vertexIdAllowedOverlays = setOf(
+        "betterhud_1_21_4",
+        "betterhud_1_21_6",
+        "betterhud_26_1"
+    )
+
+    private fun shaderDir(): File =
+        listOf("../common-resources/shaders", "common-resources/shaders")
             .map(::File)
-            .first { it.isFile }
-            .readText()
+            .first { it.isDirectory }
+
+    private fun source(overlay: String, name: String): String =
+        File(shaderDir(), "$overlay/$name").readText()
 
     @Test
-    fun testNoFragmentCoordinate() {
-        for (name in listOf("text.vsh", "text.fsh")) {
-            assertFalse(
-                source(name).contains("gl_FragCoord"),
-                "$name must not read gl_FragCoord (the Vulkan backend may flip its Y axis)"
-            )
+    fun testNoFragmentScreenCoordinate() {
+        for (overlay in overlays) {
+            for (name in listOf("text.vsh", "text.fsh")) {
+                // `gl_FragCoord.z` is vanilla 26.3 OIT depth only; `.xy` or bare `gl_FragCoord` is unsafe under Vulkan.
+                val stripped = code(overlay, name).replace("gl_FragCoord.z", "")
+                assertFalse(
+                    stripped.contains("gl_FragCoord"),
+                    "$overlay/$name must not read gl_FragCoord (the Vulkan backend may flip its Y axis)"
+                )
+            }
         }
     }
 
     /** The source without its `//` comments, so prose may still name what the code avoids. */
-    private fun code(name: String): String = source(name).lineSequence()
+    private fun code(overlay: String, name: String): String = source(overlay, name).lineSequence()
         .map { it.substringBefore("//") }
         .joinToString("\n")
 
     @Test
     fun testTheExtrapolatedAgeKeepsOnlyTheFraction() {
-        // `bhAge` is a difference of two whole tick counters, so it carries the client/server clock offset.
-        // Kept, the client extrapolates for `offset + fraction` ticks and sails past a stop. The fraction is
-        // the only legal age, and it must not be swapped for the client's own tick boundary either.
-        val shader = code("text.vsh")
-        assertTrue(
-            shader.contains("fract(bhAgeRaw)"),
-            "the payload-5 age must keep only the fraction of the counter difference"
-        )
-        assertFalse(
-            shader.contains("max(bhAgeRaw"),
-            "the payload-5 age must not keep the whole difference (it carries the clock offset)"
-        )
-        assertTrue(
-            shader.contains("bhAge(bhBits & 15, 16.0)"),
-            "the two endpoint ramp must take its phase from the tick the update was sent for"
-        )
-        assertFalse(
-            shader.contains("fract(GameTime * 24000"),
-            "no payload may phase itself on the client's own tick boundary"
-        )
+        for (overlay in overlays) {
+            val shader = code(overlay, "text.vsh")
+            assertTrue(
+                shader.contains("fract(bhAgeRaw)"),
+                "$overlay/text.vsh: the payload-5 age must keep only the fraction of the counter difference"
+            )
+            assertFalse(
+                shader.contains("max(bhAgeRaw"),
+                "$overlay/text.vsh: the payload-5 age must not keep the whole difference (it carries the clock offset)"
+            )
+            assertTrue(
+                shader.contains("bhAge(bhBits & 15, 16.0)"),
+                "$overlay/text.vsh: the two endpoint ramp must take its phase from the tick the update was sent for"
+            )
+            assertFalse(
+                shader.contains("fract(GameTime * 24000"),
+                "$overlay/text.vsh: no payload may phase itself on the client's own tick boundary"
+            )
+        }
     }
 
     @Test
-    fun testVertexIndexOnlyInsideAVersionGuard() {
-        for (name in listOf("text.vsh", "text.fsh")) {
-            val guards = ArrayDeque<String>()
-            var inBlockComment = false
-            source(name).lines().forEachIndexed { index, line ->
-                val trimmed = line.trimStart()
-                // The header comments explain the 26.2 corner problem and name the builtin they avoid.
-                if (inBlockComment) {
-                    if (trimmed.contains("*/")) inBlockComment = false
-                    return@forEachIndexed
-                }
-                if (trimmed.startsWith("/*")) {
-                    inBlockComment = !trimmed.contains("*/")
-                    return@forEachIndexed
-                }
-                if (trimmed.startsWith("//")) return@forEachIndexed
-                if (trimmed.startsWith("#if")) guards.addLast(trimmed)
-                else if (trimmed.startsWith("#endif")) guards.removeLastOrNull()
-                if (line.contains("gl_VertexID")) {
-                    val guard = guards.lastOrNull() ?: ""
-                    assertTrue(
-                        guard.contains("SHADER_VERSION"),
-                        "$name:${index + 1} uses gl_VertexID outside a SHADER_VERSION branch (guard: '$guard')"
-                    )
+    fun testVertexIndexOnlyInPre26_2Overlays() {
+        for (overlay in overlays) {
+            for (name in listOf("text.vsh", "text.fsh")) {
+                val hasVertexId = code(overlay, name).contains("gl_VertexID")
+                if (overlay in vertexIdAllowedOverlays) {
+                    if (name == "text.vsh") {
+                        assertTrue(hasVertexId, "$overlay/$name should use gl_VertexID")
+                    }
+                } else {
+                    assertFalse(hasVertexId, "$overlay/$name must not use gl_VertexID on 26.2+ / Vulkan")
                 }
             }
         }
@@ -95,28 +100,32 @@ class ShaderCompatTest {
 
     @Test
     fun testTimeModuliDivide24000() {
-        val calls = Regex("""bhAge\([^,]+,([^)]+)\)""")
-            .findAll(source("text.vsh"))
-            .map { it.groupValues[1].trim().removeSuffix(".0") }
-            .mapNotNull { it.toDoubleOrNull()?.toInt() }
-            .toSet()
-        assertTrue(calls.isNotEmpty(), "expected the payload decoders to read the game clock")
-        calls.forEach {
-            assertEquals(0, 24000 % it, "a tick modulus of $it does not divide 24000")
+        for (overlay in overlays) {
+            val calls = Regex("""bhAge\([^,]+,([^)]+)\)""")
+                .findAll(source(overlay, "text.vsh"))
+                .map { it.groupValues[1].trim().removeSuffix(".0") }
+                .mapNotNull { it.toDoubleOrNull()?.toInt() }
+                .toSet()
+            assertTrue(calls.isNotEmpty(), "$overlay: expected the payload decoders to read the game clock")
+            calls.forEach {
+                assertEquals(0, 24000 % it, "$overlay: a tick modulus of $it does not divide 24000")
+            }
         }
     }
 
     @Test
     fun testDefineBlocksAreBalanced() {
-        for (name in listOf("text.vsh", "text.fsh")) {
-            var depth = 0
-            source(name).lines().forEach {
-                val trimmed = it.trimStart()
-                if (trimmed.startsWith("#if")) depth++
-                else if (trimmed.startsWith("#endif")) depth--
-                assertTrue(depth >= 0, "$name has an #endif without an #if")
+        for (overlay in overlays) {
+            for (name in listOf("text.vsh", "text.fsh")) {
+                var depth = 0
+                source(overlay, name).lines().forEach {
+                    val trimmed = it.trimStart()
+                    if (trimmed.startsWith("#if")) depth++
+                    else if (trimmed.startsWith("#endif")) depth--
+                    assertTrue(depth >= 0, "$overlay/$name has an #endif without an #if")
+                }
+                assertEquals(0, depth, "$overlay/$name has an unbalanced #if")
             }
-            assertEquals(0, depth, "$name has an unbalanced #if")
         }
     }
 }
