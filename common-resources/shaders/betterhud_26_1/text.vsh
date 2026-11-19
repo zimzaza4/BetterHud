@@ -135,6 +135,8 @@ void main() {
             float opacity = 1;
             bool outline = false;
             int property = 0;
+            #define BH_TEXT_Y
+            bool bhTextY = false;
 
             // The cases come as a tree of `if (id <= ...)` instead of a switch: some drivers lower a
             // switch into an if/else chain nested once per case and refuse more than 64 levels, which a
@@ -142,6 +144,13 @@ void main() {
             // and keeps its own switch - the cases then come as `case` labels (the #else branch below).
             #define BH_FLAT_LAYOUT
             #CreateLayout
+
+            if (bhTextY) {
+                int bhYr = int(Color.r * 255.0 + 0.5) & 7;
+                int bhYg = int(Color.g * 255.0 + 0.5) & 7;
+                int bhYb = int(Color.b * 255.0 + 0.5) & 7;
+                pos.y += float(((bhYr << 6) | (bhYg << 3) | bhYb) - 256);
+            }
 
             vertexColor = Color * vec4(1, 1, 1, opacity);
             vertexColor = Color * vec4(1, 1, 1, opacity);

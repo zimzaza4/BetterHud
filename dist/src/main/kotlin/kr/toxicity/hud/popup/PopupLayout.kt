@@ -11,6 +11,7 @@ import kr.toxicity.hud.image.ImageComponent
 import kr.toxicity.hud.image.LoadedImage
 import kr.toxicity.hud.layout.BackgroundLayout
 import kr.toxicity.hud.layout.LayoutGroup
+import kr.toxicity.hud.layout.buildTextData
 import kr.toxicity.hud.location.GuiLocation
 import kr.toxicity.hud.location.LocationGroup
 import kr.toxicity.hud.location.PixelLocation
@@ -202,88 +203,14 @@ class PopupLayout(
                 pixel.opacity,
                 textLayout.property
             )
-            val scaledMap = textLayout.source.charWidth.intEntries.associate { (k, v) ->
-                k to v * textLayout.scale
-            }
-            val scaledImageMap = textLayout.imageCharMap.intEntries.associate { (k, v) ->
-                k to v * textLayout.scale * textLayout.emoji.scale
-            }
             val index = ++textIndex
-            val keys = (0..<textLayout.line).map { lineIndex ->
-                text(textLayout.identifier(textShader, pixel.y + lineIndex * textLayout.lineWidth)) {
-                    val array = textLayout.startJson()
-                    textLayout.source.array.forEach {
-                        createAscent(textShader, pixel.y + lineIndex * textLayout.lineWidth - it.ascent(textLayout.scale)) { y ->
-                            array += jsonObjectOf(
-                                "type" to "bitmap",
-                                "file" to "$NAME_SPACE_ENCODED:${it.file}",
-                                "ascent" to y,
-                                "height" to (it.height * textLayout.scale).roundToInt(),
-                                "chars" to it.chars
-                            )
-                        }
-                    }
-                    val textEncoded = "popup_${parent.name}_text_${globalIndex}_${index}_${lineIndex + 1}".encodeKey(EncodeManager.EncodeNamespace.FONT)
-                    val key = createAdventureKey(textEncoded)
-                    var imageTextIndex = TEXT_IMAGE_START_CODEPOINT + scaledImageMap.size
-                    scaledImageMap.forEach { (k, v) ->
-                        createAscent(textShader, pixel.y + v.location.y + lineIndex * textLayout.lineWidth + v.ascent) { y ->
-                            array += jsonObjectOf(
-                                "type" to "bitmap",
-                                "file" to v.fileName,
-                                "ascent" to y,
-                                "height" to v.normalizedHeight,
-                                "chars" to jsonArrayOf(k.parseChar())
-                            )
-                        }
-                    }
-                    PackGenerator.addTask(file + "$textEncoded.json") {
-                        jsonObjectOf("providers" to array).toByteArray()
-                    }
-                    BackgroundKey(
-                        key,
-                        //TODO replace it to proper background in the future.
-                        textLayout.background.source?.let {
-                            fun getString(image: LoadedImage, file: String): WidthComponent {
-                                val result = (++imageTextIndex).parseChar()
-                                val height = (image.image.height.toDouble() * textLayout.background.scale).roundToInt()
-                                val div = height.toDouble() / image.image.height
-                                createAscent(textShader.toBackground(it.location.opacity), pixel.y + it.location.y + lineIndex * textLayout.lineWidth) { y ->
-                                    array += jsonObjectOf(
-                                        "type" to "bitmap",
-                                        "file" to "$NAME_SPACE_ENCODED:$file.png",
-                                        "ascent" to y,
-                                        "height" to height,
-                                        "chars" to jsonArrayOf(result)
-                                    )
-                                }
-                                return WidthComponent(Component.text()
-                                    .content(result)
-                                    .append(NEGATIVE_ONE_SPACE_COMPONENT.finalizeFont().component), (image.image.width.toDouble() * div).roundToInt())
-                            }
-                            BackgroundLayout(
-                                it.location.x,
-                                getString(it.left, "background_${it.id}_left".encodeKey(EncodeManager.EncodeNamespace.TEXTURES)),
-                                getString(it.right, "background_${it.id}_right".encodeKey(EncodeManager.EncodeNamespace.TEXTURES)),
-                                getString(it.body, "background_${it.id}_body".encodeKey(EncodeManager.EncodeNamespace.TEXTURES))
-                            )
-                        }
-                    )
-                }
-            }
             TextRenderer(
                 textLayout,
-                HudTextData(
-                    keys,
-                    (scaledMap.entries.associate { (k, v) ->
-                        k to v.normalizedWidth
-                    } + scaledImageMap.entries.associate { (k, v) ->
-                        k to v.normalizedWidth
-                    }).toIntMap(),
-                    scaledImageMap.map {
-                        it.value.name to it.key
-                    }.toMap(),
-                    textLayout.splitWidth
+                textLayout.buildTextData(
+                    textShader,
+                    pixel.y,
+                    file,
+                    "popup_${parent.name}_text_${globalIndex}_${index}"
                 ),
                 pixel.x,
             )

@@ -6,5 +6,6 @@ class HudTextData(
     val font: List<BackgroundKey>,
     val codepoint: IntEntryMap,
     val imageCodepoint: Map<String, Int>,
-    val splitWidth: Int
+    val splitWidth: Int,
+    val lineDy: List<Int>? = null
 )

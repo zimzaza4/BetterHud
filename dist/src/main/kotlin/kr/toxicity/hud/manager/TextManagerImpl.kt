@@ -5,6 +5,8 @@ import it.unimi.dsi.fastutil.ints.IntOpenHashSet
 import kr.toxicity.hud.api.manager.ConfigManager
 import kr.toxicity.hud.api.manager.TextManager
 import kr.toxicity.hud.api.plugin.ReloadInfo
+import kr.toxicity.hud.api.yaml.YamlArray
+import kr.toxicity.hud.api.yaml.YamlElement
 import kr.toxicity.hud.api.yaml.YamlObject
 import kr.toxicity.hud.configuration.PluginConfiguration
 import kr.toxicity.hud.element.TextElement
@@ -23,6 +25,7 @@ import java.awt.Font
 import java.awt.font.FontRenderContext
 import java.awt.image.BufferedImage
 import java.io.File
+import java.io.InputStream
 import java.io.InputStreamReader
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
@@ -36,10 +39,13 @@ object TextManagerImpl : BetterHudManager, TextManager {
     private data class TextCache(
         val name: String,
         val imagesName: Set<String>,
-        val supportLanguage: Set<String>?
+        val supportLanguage: Set<String>?,
+        val whitelistHash: Int = 0
     )
 
-    private const val CHAR_LENGTH = 16
+    private const val MAX_SHEET_EXTENT = 512
+    private const val MIN_SHEET_COLUMNS = 16
+    private const val MAX_SHEET_COLUMNS = 32
 
     private var fontIndex = 0
 
@@ -81,7 +87,7 @@ object TextManagerImpl : BetterHudManager, TextManager {
             addAll(0x3041..0x3096)
             addAll(0x30A1..0x30FA)
         },
-        "china" to IntOpenHashSet().apply {
+        "china_all" to IntOpenHashSet().apply {
             addAll(0x4E00..0x9FFF) // CJK Unified Ideographs
             addAll(0xFF00..0xFFFE) // Fullwidth Forms
             addAll(0x3000..0x306F) // CJK Symbols and Punctuation
@@ -160,6 +166,19 @@ object TextManagerImpl : BetterHudManager, TextManager {
     )
 
     private val FRC = FontRenderContext(null, true, true)
+
+    private val chinaCommonCodepoints: IntOpenHashSet by lazy {
+        BOOTSTRAP.resource("china_common.txt")?.use(::loadChinaCommonCodepoints)
+            ?: languageCodepointRange["china_all"]!!
+    }
+
+    internal fun resolveLanguageCodepoints(
+        name: String,
+        chinaCommonOverride: IntOpenHashSet? = null
+    ): IntOpenHashSet? = when (name) {
+        "china", "china_common" -> chinaCommonOverride ?: chinaCommonCodepoints
+        else -> languageCodepointRange[name]
+    }
 
     @Synchronized
     fun getKey(shaderGroup: HudLayout.Identifier) = textKeyMap[shaderGroup]
@@ -260,7 +279,7 @@ object TextManagerImpl : BetterHudManager, TextManager {
         )
         val parseDefault = parseTTFFont("", "default_$configScale", configScale, defaultProvider, resource.textures, emptyMap(), fontConfig.get("include")?.asArray()?.map {
             it.asString()
-        }?.toSet(), fontConfig.getAsBoolean("merge-default-bitmap", true), fontConfig)()
+        }?.toSet(), collectWhitelistCodepoints(fontConfig, workingDirectory), fontConfig.getAsBoolean("merge-default-bitmap", true), fontConfig)()
         parseDefault.charWidth.forEach {
             textWidthMap[it.key] = (it.value * configDiv).normalizedWidth
         }
@@ -320,6 +339,7 @@ object TextManagerImpl : BetterHudManager, TextManager {
                             section["include"]?.asArray()?.map {
                                 it.asString()
                             }?.toSet(),
+                            collectWhitelistCodepoints(section, workingDirectory),
                             section.getAsBoolean("merge-default-bitmap", false),
                             section,
                         )
@@ -566,11 +586,13 @@ object TextManagerImpl : BetterHudManager, TextManager {
         imageSaveFolder: List<String>,
         images: Map<String, LocatedImage>,
         supportedLanguage: Set<String>?,
+        whitelist: IntOpenHashSet?,
         mergeDefaultBitmap: Boolean,
         yamlObject: YamlObject
     ): TextSupplier {
+        val whitelistHash = whitelist?.hashCode() ?: 0
         return synchronized(textCacheMap) {
-            textCacheMap[TextCache(saveName, images.keys, supportedLanguage)]?.let { old ->
+            textCacheMap[TextCache(saveName, images.keys, supportedLanguage, whitelistHash)]?.let { old ->
                 TextSupplier {
                     TextElement(internalName, scale, old.array, old.charWidth, old.imageTextScale, yamlObject)
                 }
@@ -608,12 +630,15 @@ object TextManagerImpl : BetterHudManager, TextManager {
                 var filter = { i: Int ->
                     !charWidthMap.containsKey(i)
                 }
-                supportedLanguage?.let { lang ->
+                if (supportedLanguage != null || whitelist != null) {
                     val supportedCodepoint = HashSet(defaultLatin)
-                    lang.forEach {
-                        languageCodepointRange[it]?.let { lang ->
-                            supportedCodepoint += lang
+                    supportedLanguage?.forEach { lang ->
+                        resolveLanguageCodepoints(lang)?.let { range ->
+                            supportedCodepoint += range
                         }
+                    }
+                    whitelist?.let { extra ->
+                        supportedCodepoint += extra
                     }
                     val old = filter
                     filter = {
@@ -644,21 +669,22 @@ object TextManagerImpl : BetterHudManager, TextManager {
                 }
                 pairMap.forEach { (k, v) ->
                     val (w, h, m) = k
+                    val cols = (MAX_SHEET_EXTENT / maxOf(w, h)).coerceIn(MIN_SHEET_COLUMNS, MAX_SHEET_COLUMNS)
                     fun save(list: List<CharImage>) {
                         val encode = "text_${saveFontName}_${++i}".encodeKey(EncodeManager.EncodeNamespace.TEXTURES)
                         val name = "$encode.png"
                         val json = JsonArray()
-                        list.split(CHAR_LENGTH).forEach { subList ->
+                        list.split(cols).forEach { subList ->
                             json.add(subList.joinToString("") { pair ->
                                 pair.codepoint.parseChar()
                             })
                         }
                         PackGenerator.addTask(imageSaveFolder + name) {
-                            BufferedImage(w * list.size.coerceAtMost(CHAR_LENGTH), h * (((list.size - 1) / CHAR_LENGTH) + 1), BufferedImage.TYPE_INT_ARGB).apply {
+                            BufferedImage(w * list.size.coerceAtMost(cols), h * (((list.size - 1) / cols) + 1), BufferedImage.TYPE_INT_ARGB).apply {
                                 createGraphics().run {
                                     composite = AlphaComposite.getInstance(AlphaComposite.SRC_OVER)
                                     list.forEachIndexed { index, pair ->
-                                        drawImage(pair.image, w * (index % CHAR_LENGTH), h * (index / CHAR_LENGTH), null)
+                                        drawImage(pair.image, w * (index % cols), h * (index / cols), null)
                                     }
                                     dispose()
                                 }
@@ -670,11 +696,11 @@ object TextManagerImpl : BetterHudManager, TextManager {
                             }
                         }
                     }
-                    v.toList().split(CHAR_LENGTH * CHAR_LENGTH).forEach { target ->
-                        if (target.size % CHAR_LENGTH == 0 || target.size < CHAR_LENGTH) {
+                    v.toList().split(cols * cols).forEach { target ->
+                        if (target.size % cols == 0 || target.size < cols) {
                             save(target)
                         } else {
-                            val split = target.split(CHAR_LENGTH)
+                            val split = target.split(cols)
                             save(split.subList(0, split.lastIndex).flatten())
                             save(split.last())
                         }
@@ -683,7 +709,7 @@ object TextManagerImpl : BetterHudManager, TextManager {
                 debug(ConfigManager.DebugLevel.ASSETS, "Finalizing font text $saveName... (${charWidthMap.size.withDecimal()} of codepoints)")
                 val result = TextElement(internalName, scale, textList, charWidthMap, imageTextScaleMap, yamlObject)
                 synchronized(textCacheMap) {
-                    textCacheMap[TextCache(internalName, images.keys, supportedLanguage)] = result
+                    textCacheMap[TextCache(internalName, images.keys, supportedLanguage, whitelistHash)] = result
                 }
                 result
             }
@@ -695,5 +721,66 @@ object TextManagerImpl : BetterHudManager, TextManager {
     }
 
     override fun end() {
+    }
+}
+
+internal fun loadChinaCommonCodepoints(stream: InputStream): IntOpenHashSet = IntOpenHashSet().apply {
+    addAll(0x2000..0x206F)
+    addAll(0x3000..0x303F)
+    addAll(0xFF00..0xFFEF)
+    InputStreamReader(stream, Charsets.UTF_8).buffered().use { reader ->
+        reader.lineSequence().forEach { line ->
+            addVisibleCodepoints(line)
+        }
+    }
+}
+
+private val WHITELIST_SCAN_EXTENSIONS = setOf("txt", "yml", "yaml", "json", "properties")
+
+internal fun collectWhitelistCodepoints(
+    yamlObject: YamlObject,
+    baseDir: File,
+    warnSink: (String) -> Unit = ::warn
+): IntOpenHashSet? {
+    val inlineEl = yamlObject["whitelist"]
+    val filesEl = yamlObject["whitelist-files"]
+    if (inlineEl == null && filesEl == null) return null
+    val result = IntOpenHashSet()
+    inlineEl?.toStringList()?.forEach { text ->
+        result.addVisibleCodepoints(text)
+    }
+    filesEl?.toStringList()?.forEach { rawPath ->
+        val resolved = File(rawPath).let { if (it.isAbsolute) it else File(baseDir, rawPath) }.normalize()
+        if (!resolved.exists()) {
+            warnSink("Font whitelist file or directory not found: ${resolved.path}")
+            return@forEach
+        }
+        if (resolved.isFile) {
+            result.addFileCodepoints(resolved)
+        } else if (resolved.isDirectory) {
+            resolved.walkTopDown()
+                .filter { it.isFile && it.extension.lowercase() in WHITELIST_SCAN_EXTENSIONS }
+                .forEach { result.addFileCodepoints(it) }
+        }
+    }
+    return result
+}
+
+private fun YamlElement.toStringList(): List<String> = (this as? YamlArray)?.map { it.asString() }
+    ?: runCatching { asArray().map { it.asString() } }.getOrElse { listOf(asString()) }
+
+private fun IntOpenHashSet.addFileCodepoints(file: File) {
+    file.bufferedReader(Charsets.UTF_8).use { reader ->
+        reader.lineSequence().forEach { line ->
+            addVisibleCodepoints(line)
+        }
+    }
+}
+
+private fun IntOpenHashSet.addVisibleCodepoints(text: String) {
+    text.codePoints().forEach { cp ->
+        if (cp >= 0x20 && !Character.isISOControl(cp)) {
+            add(cp)
+        }
     }
 }

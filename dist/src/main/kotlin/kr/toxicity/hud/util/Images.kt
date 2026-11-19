@@ -1,9 +1,11 @@
 package kr.toxicity.hud.util
 
+import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap
 import kr.toxicity.hud.image.LoadedImage
 import kr.toxicity.hud.image.NamedLoadedImage
 import kr.toxicity.hud.image.enums.FlipType
 import java.awt.image.BufferedImage
+import java.awt.image.IndexColorModel
 import java.awt.image.RenderedImage
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -24,11 +26,88 @@ fun RenderedImage.save(outputStream: OutputStream) {
 }
 
 fun RenderedImage.toByteArray(): ByteArray {
+    if (this is BufferedImage) {
+        val indexed = toIndexedImage()
+        if (indexed != null) {
+            val compact = writePng(indexed.image)
+            // Sparse palettes (<=16 colors) on multi-glyph sheets are always much smaller than 32-bit RGBA;
+            // only compare with 32-bit output for richer small textures where PLTE/tRNS overhead can dominate.
+            if (indexed.colors <= 16 && width * height >= 256) return compact
+            val raw = writePng(this)
+            return if (compact.size < raw.size) compact else raw
+        }
+    }
+    return writePng(this)
+}
+
+private fun writePng(image: RenderedImage): ByteArray {
     val byte = ByteArrayOutputStream()
     byte.buffered().use { buffer ->
-        ImageIO.write(this, "png", buffer)
+        ImageIO.write(image, "png", buffer)
     }
     return byte.toByteArray()
+}
+
+private data class IndexedImage(val image: BufferedImage, val colors: Int)
+
+private fun BufferedImage.toIndexedImage(): IndexedImage? {
+    if (width <= 0 || height <= 0 || isAlphaPremultiplied) return null
+    val cm = colorModel
+    if (cm is IndexColorModel && cm.pixelSize <= 8) return null
+    val total = width * height
+    val pixels = getRGB(0, 0, width, height, IntArray(total), 0, width)
+    val paletteMap = Int2IntOpenHashMap(32).apply { defaultReturnValue(-1) }
+    val palette = IntArray(256)
+    var count = 0
+    for (i in 0 until total) {
+        val argb = pixels[i]
+        if (paletteMap.get(argb) == -1) {
+            if (count >= 256) return null
+            paletteMap.put(argb, count)
+            palette[count++] = argb
+        }
+    }
+    val bits = when {
+        count <= 2 -> 1
+        count <= 4 -> 2
+        count <= 16 -> 4
+        else -> 8
+    }
+    val mapSize = count.coerceAtLeast(2)
+    val r = ByteArray(mapSize)
+    val g = ByteArray(mapSize)
+    val b = ByteArray(mapSize)
+    val a = ByteArray(mapSize)
+    var hasTranslucent = false
+    var transparentIndex = -1
+    for (i in 0 until count) {
+        val argb = palette[i]
+        val alpha = (argb ushr 24) and 0xFF
+        r[i] = ((argb ushr 16) and 0xFF).toByte()
+        g[i] = ((argb ushr 8) and 0xFF).toByte()
+        b[i] = (argb and 0xFF).toByte()
+        a[i] = alpha.toByte()
+        if (alpha == 0 && transparentIndex == -1) {
+            transparentIndex = i
+        } else if (alpha < 255) {
+            hasTranslucent = true
+        }
+    }
+    val indexedCm = when {
+        hasTranslucent -> IndexColorModel(bits, mapSize, r, g, b, a)
+        transparentIndex != -1 -> IndexColorModel(bits, mapSize, r, g, b, transparentIndex)
+        else -> IndexColorModel(bits, mapSize, r, g, b)
+    }
+    val imageType = if (bits == 8) BufferedImage.TYPE_BYTE_INDEXED else BufferedImage.TYPE_BYTE_BINARY
+    val indexed = BufferedImage(width, height, imageType, indexedCm)
+    val raster = indexed.raster
+    for (y in 0 until height) {
+        val row = y * width
+        for (x in 0 until width) {
+            raster.setSample(x, y, 0, paletteMap.get(pixels[row + x]))
+        }
+    }
+    return IndexedImage(indexed, count)
 }
 
 fun ByteArray.hexToImage(): BufferedImage {
