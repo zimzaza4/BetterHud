@@ -425,3 +425,65 @@ operator fun TextColor.times(other: TextColor): TextColor {
         blue() process other.blue()
     )
 }
+
+const val TEXT_Y_MIN = -256
+const val TEXT_Y_MAX = 255
+private const val TEXT_Y_RANGE = 512
+
+fun textYBucket(yAxis: Int): Int = if (yAxis in TEXT_Y_MIN..TEXT_Y_MAX) {
+    0
+} else {
+    Math.floorDiv(yAxis - TEXT_Y_MIN, TEXT_Y_RANGE) * TEXT_Y_RANGE
+}
+
+fun Int.encodeTextYBits(dy: Int): Int {
+    val v = (dy - TEXT_Y_MIN).coerceIn(0, TEXT_Y_RANGE - 1)
+    val r = nearestMod8((this ushr 16) and 0xFF, (v ushr 6) and 7)
+    val g = nearestMod8((this ushr 8) and 0xFF, (v ushr 3) and 7)
+    val b = nearestMod8(this and 0xFF, v and 7)
+    return (r shl 16) or (g shl 8) or b
+}
+
+fun decodeTextYBits(rgb: Int): Int {
+    val r = (rgb ushr 16) and 7
+    val g = (rgb ushr 8) and 7
+    val b = rgb and 7
+    return ((r shl 6) or (g shl 3) or b) + TEXT_Y_MIN
+}
+
+private fun nearestMod8(channel: Int, remainder: Int): Int {
+    val base = (channel and 7.inv()) or remainder
+    var best = base
+    var bestDist = Int.MAX_VALUE
+    for (i in -1..1) {
+        val candidate = base + i * 8
+        if (candidate in 0..255) {
+            val dist = abs(candidate - channel)
+            if (dist < bestDist) {
+                bestDist = dist
+                best = candidate
+            }
+        }
+    }
+    return best
+}
+
+fun Component.encodeTextY(dy: Int, fallbackColor: TextColor = NamedTextColor.WHITE): Component {
+    fun rewrite(node: Component, inheritedColor: TextColor): Component {
+        val isSpace = node.style().font() == SPACE_KEY
+        val effectiveColor = node.color() ?: inheritedColor
+        val children = node.children()
+        val mapped = if (children.isEmpty()) children else children.map { rewrite(it, effectiveColor) }
+        var updated = if (children.isEmpty()) node else node.children(mapped)
+        if (!isSpace) {
+            updated = updated.color(TextColor.color(effectiveColor.value().encodeTextYBits(dy)))
+            val rawShadow = updated.shadowColor()
+            if (rawShadow != null && (rawShadow.value() ushr 24) != 0) {
+                val alphaMask = rawShadow.value() and -0x1000000
+                updated = updated.shadowColor(ShadowColor.shadowColor(alphaMask or rawShadow.value().encodeTextYBits(dy)))
+            }
+        }
+        return updated
+    }
+    return rewrite(this, color() ?: fallbackColor)
+}

@@ -12,6 +12,7 @@ import kr.toxicity.hud.manager.PlayerManagerImpl
 import kr.toxicity.hud.text.HudTextData
 import kr.toxicity.hud.util.*
 import net.kyori.adventure.text.Component
+import net.kyori.adventure.text.TextComponent
 import net.kyori.adventure.text.TextReplacementConfig
 import net.kyori.adventure.text.format.NamedTextColor
 import net.kyori.adventure.text.format.ShadowColor
@@ -89,6 +90,8 @@ class TextRenderer(
                 .parseToComponent()
                 .split(splitOption, widthViewer)
             var max = 0
+            val dynamicColor = colorApply(targetHudPlayer)
+            val lineDy = data.lineDy
             compList.forEachIndexed { index, comp ->
                 if (data.font.lastIndex < index) return@forEachIndexed
                 val backgroundKey = data.font[index]
@@ -113,9 +116,17 @@ class TextRenderer(
                 } ?: run {
                     if (max < finalComp.width) max = finalComp.width
                 }
+                if (lineDy != null) {
+                    val dy = lineDy[index]
+                    finalComp = finalComp.shadow(outline).applyColor(dynamicColor)
+                    val encoded = finalComp.component.build().encodeTextY(dy, color)
+                    val builder = (encoded as? TextComponent)?.toBuilder() ?: Component.text().append(encoded)
+                    finalComp = WidthComponent(builder, finalComp.width)
+                }
                 widthComp = widthComp plusWithAlign finalComp
             }
-            widthComp.shadow(outline).applyColor(colorApply(targetHudPlayer)).toPixelComponent(when (align) {
+            val styled = if (lineDy != null) widthComp else widthComp.shadow(outline).applyColor(dynamicColor)
+            styled.toPixelComponent(when (align) {
                 LayoutAlign.LEFT -> x
                 LayoutAlign.CENTER -> x - max / 2
                 LayoutAlign.RIGHT -> x - max

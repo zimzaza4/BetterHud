@@ -1,22 +1,30 @@
 package kr.toxicity.hud.layout
 
+import kr.toxicity.hud.api.component.WidthComponent
 import kr.toxicity.hud.api.yaml.YamlObject
 import kr.toxicity.hud.background.HudBackground
 import kr.toxicity.hud.equation.TEquation
+import kr.toxicity.hud.image.LoadedImage
 import kr.toxicity.hud.layout.enums.LayoutAlign
 import kr.toxicity.hud.location.PixelLocation
 import kr.toxicity.hud.manager.BackgroundManager
 import kr.toxicity.hud.manager.ConfigManagerImpl
+import kr.toxicity.hud.manager.EncodeManager
 import kr.toxicity.hud.manager.MinecraftManager
 import kr.toxicity.hud.manager.TextManagerImpl
 import kr.toxicity.hud.element.TextElement
+import kr.toxicity.hud.pack.PackGenerator
 import kr.toxicity.hud.shader.HudShader
 import kr.toxicity.hud.shader.ShaderGroup
+import kr.toxicity.hud.text.BackgroundKey
+import kr.toxicity.hud.text.HudTextData
 import kr.toxicity.hud.text.ImageTextScale
 import kr.toxicity.hud.util.*
+import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.format.NamedTextColor
 import net.kyori.adventure.text.format.TextColor
 import java.text.DecimalFormat
+import kotlin.math.roundToInt
 
 interface TextLayout : HudLayout<TextElement> {
 
@@ -178,4 +186,103 @@ interface TextLayout : HudLayout<TextElement> {
             map
         }
     }
+}
+
+internal fun TextLayout.buildTextData(
+    shader: HudShader,
+    baseY: Int,
+    fontFolder: List<String>,
+    fontNamePrefix: String
+): HudTextData {
+    val scaledMap = source.charWidth.intEntries.associate { (k, v) ->
+        k to v * scale
+    }
+    val scaledImageMap = imageCharMap.intEntries.associate { (k, v) ->
+        k to v * scale * emoji.scale
+    }
+    val useShaderY = shader.supportsTextYOffset
+    val effectiveShader = shader.withTextYOffset(useShaderY)
+    val lineDy = if (useShaderY) ArrayList<Int>(line) else null
+    val keys = (0..<line).map { lineIndex ->
+        val yAxis = (baseY + lineIndex * lineWidth).coerceIn(-HUD_ADD_HEIGHT, HUD_ADD_HEIGHT)
+        val bucketY = if (useShaderY) textYBucket(yAxis) else yAxis
+        lineDy?.add(yAxis - bucketY)
+        text(identifier(effectiveShader, bucketY)) {
+            val array = startJson()
+            source.array.forEach {
+                createAscent(effectiveShader, bucketY - it.ascent(scale)) { y ->
+                    array += jsonObjectOf(
+                        "type" to "bitmap",
+                        "file" to "$NAME_SPACE_ENCODED:${it.file}",
+                        "ascent" to y,
+                        "height" to (it.height * scale).roundToInt(),
+                        "chars" to it.chars
+                    )
+                }
+            }
+            var imageTextIndex = TEXT_IMAGE_START_CODEPOINT + scaledImageMap.size
+            val textEncoded = "${fontNamePrefix}_${lineIndex + 1}".encodeKey(EncodeManager.EncodeNamespace.FONT)
+            val key = createAdventureKey(textEncoded)
+            scaledImageMap.forEach { (k, v) ->
+                createAscent(effectiveShader, bucketY + v.location.y + v.ascent) { y ->
+                    array += jsonObjectOf(
+                        "type" to "bitmap",
+                        "file" to v.fileName,
+                        "ascent" to y,
+                        "height" to v.normalizedHeight,
+                        "chars" to jsonArrayOf(k.parseChar())
+                    )
+                }
+            }
+            PackGenerator.addTask(fontFolder + "$textEncoded.json") {
+                jsonObjectOf("providers" to array).toByteArray()
+            }
+            BackgroundKey(
+                key,
+                //TODO replace it to proper background in the future.
+                background.source?.let {
+                    fun getString(image: LoadedImage, file: String): WidthComponent {
+                        val result = (++imageTextIndex).parseChar()
+                        val height = (image.image.height.toDouble() * background.scale).roundToInt()
+                        val div = height.toDouble() / image.image.height
+                        val bgShader = effectiveShader.toBackground(it.location.opacity).withTextYOffset(useShaderY)
+                        createAscent(bgShader, bucketY + it.location.y) { y ->
+                            array += jsonObjectOf(
+                                "type" to "bitmap",
+                                "file" to "$NAME_SPACE_ENCODED:$file.png",
+                                "ascent" to y,
+                                "height" to height,
+                                "chars" to jsonArrayOf(result)
+                            )
+                        }
+                        return WidthComponent(
+                            Component.text()
+                                .content(result)
+                                .append(NEGATIVE_ONE_SPACE_COMPONENT.finalizeFont().component),
+                            (image.image.width.toDouble() * div).roundToInt()
+                        )
+                    }
+                    BackgroundLayout(
+                        it.location.x,
+                        getString(it.left, "background_${it.id}_left".encodeKey(EncodeManager.EncodeNamespace.TEXTURES)),
+                        getString(it.right, "background_${it.id}_right".encodeKey(EncodeManager.EncodeNamespace.TEXTURES)),
+                        getString(it.body, "background_${it.id}_body".encodeKey(EncodeManager.EncodeNamespace.TEXTURES))
+                    )
+                }
+            )
+        }
+    }
+    return HudTextData(
+        keys,
+        (scaledMap.entries.associate { (k, v) ->
+            k to v.normalizedWidth
+        } + scaledImageMap.entries.associate { (k, v) ->
+            k to v.normalizedWidth
+        }).toIntMap(),
+        scaledImageMap.map {
+            it.value.name to it.key
+        }.toMap(),
+        splitWidth,
+        lineDy
+    )
 }

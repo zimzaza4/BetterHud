@@ -43,6 +43,7 @@ data class HudShader(
     val clip: ClipRegion? = null,
     val smooth: SmoothConfig? = null,
     val scroll: ScrollConfig? = null,
+    val textYOffset: Boolean = false,
 ) : Comparable<HudShader> {
 
     /**
@@ -118,6 +119,13 @@ data class HudShader(
         get() = clip != null && clip.axis != ClipRegion.NONE &&
             (payloadOwner == PayloadOwner.FILL || payloadOwner == PayloadOwner.MIXED)
 
+    /** Whether static vertical text offsets can be decoded in `text.vsh` without scaling drift. */
+    val supportsTextYOffset: Boolean
+        get() = !transforms && renderScale.scale.y == 1.0 && !renderScale.scale.staticScale
+
+    fun withTextYOffset(enabled: Boolean = true): HudShader =
+        if (enabled && supportsTextYOffset && !textYOffset) copy(textYOffset = true) else this
+
     override fun compareTo(other: HudShader): Int {
         var result = gui.compareTo(other.gui)
         if (result != 0) return result
@@ -139,6 +147,8 @@ data class HudShader(
         result = compareValues(smooth, other.smooth)
         if (result != 0) return result
         result = compareValues(scroll, other.scroll)
+        if (result != 0) return result
+        result = textYOffset.compareTo(other.textYOffset)
         if (result != 0) return result
         if (!transforms && !other.transforms) return 0
         result = rotationDynamic.compareTo(other.rotationDynamic)
@@ -190,6 +200,7 @@ data class HudShader(
         result = 31 * result + (clip?.hashCode() ?: 0)
         result = 31 * result + (smooth?.hashCode() ?: 0)
         result = 31 * result + (scroll?.hashCode() ?: 0)
+        result = 31 * result + textYOffset.hashCode()
         if (!transforms) return result
         result = 31 * result + rotationDynamic.hashCode()
         result = 31 * result + positionDynamic.hashCode()

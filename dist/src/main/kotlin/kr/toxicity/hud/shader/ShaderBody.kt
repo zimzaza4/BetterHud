@@ -31,6 +31,11 @@ object ShaderBody {
         if (shader.gui.y != 0.0) body.add("    yGui = ui.y * ${shader.gui.y.toFloat()} / 100.0;")
         if (shader.layer != 0) body.add("    layer = ${shader.layer};")
         if (shader.outline != 0) body.add("    outline = true;")
+        if (shader.textYOffset) {
+            body.add("#ifdef BH_TEXT_Y")
+            body.add("    bhTextY = true;")
+            body.add("#endif")
+        }
         shader.smooth?.let {
             // A scrolling element's payload carries a four bit tick - and so does the mixed one - so a ramp
             // longer than that window is one its client cannot measure. The other layouts carry a wider
